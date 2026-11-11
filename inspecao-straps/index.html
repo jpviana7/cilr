@@ -1,0 +1,610 @@
+<meta charset="utf-8">
+<title>Inspetor de Straps</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: uma coluna de bancada (foto + ferramentas), resultados e conjunto de teste empilhados; 2 colunas no desktop */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#18212b; --muted:#5b6876; --line:#d5dce3;
+  --accent:#1f5fbf; --accent-ink:#ffffff; --steel:#8a97a5;
+  --ok:#1d7a46; --ok-bg:#e3f3e9; --bad:#c0362c; --bad-bg:#fbe7e5; --warn:#a86400; --warn-bg:#fdf1dc;
+  --neg:#18212b; --neg-ink:#ffffff;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161c; --panel:#1a2129; --ink:#e6ebf0; --muted:#9aa7b4; --line:#2c3642;
+  --accent:#6da1ff; --accent-ink:#0b1320; --steel:#6f7d8b;
+  --ok:#5fd393; --ok-bg:#16301f; --bad:#ff7b6e; --bad-bg:#3a1a17; --warn:#f2b44f; --warn-bg:#3a2b12;
+  --neg:#e6ebf0; --neg-ink:#11161c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c; --panel:#1a2129; --ink:#e6ebf0; --muted:#9aa7b4; --line:#2c3642;
+  --accent:#6da1ff; --accent-ink:#0b1320; --steel:#6f7d8b;
+  --ok:#5fd393; --ok-bg:#16301f; --bad:#ff7b6e; --bad-bg:#3a1a17; --warn:#f2b44f; --warn-bg:#3a2b12;
+  --neg:#e6ebf0; --neg-ink:#11161c; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 16px}
+h1{font-size:1.45rem;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:1rem;margin:0;font-weight:600}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.sub{color:var(--muted);margin:2px 0 0;max-width:62ch}
+.grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:12px;min-width:0;align-content:start}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:inherit;font-weight:600;font-size:.92rem;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  border-radius:8px;padding:9px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;min-height:40px}
+.btn:hover{border-color:var(--steel)}
+.btn:focus-visible,.seg button:focus-visible,.tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.big{min-height:48px;padding:10px 18px;font-size:1rem}
+label.btn input{display:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;font-size:.85rem;font-weight:500;border:0;background:transparent;color:var(--muted);padding:8px 11px;cursor:pointer;min-height:38px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.hint{font-size:.85rem;color:var(--muted);margin:0}
+.stage{position:relative;border-radius:8px;overflow:hidden;background:#0d1116;border:1px solid var(--line)}
+#cv{display:block;width:100%;height:auto}
+.empty{padding:40px 16px;text-align:center;color:#c9d2db;font-size:.9rem}
+.banner{border-radius:var(--r);padding:12px 14px;display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel)}
+.banner .big{font-family:var(--mono);font-weight:600;font-size:1.15rem;letter-spacing:.04em}
+.banner.ok{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.banner.bad{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}
+.banner.warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+.banner .txt{color:var(--ink);font-size:.9rem;min-width:0}
+.pairs{display:grid;gap:10px}
+.pair{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:stretch;border:1px solid var(--line);border-radius:8px;padding:8px}
+.pair.bad{border-color:var(--bad);background:var(--bad-bg)}
+.pair.warn{border-color:var(--warn);background:var(--warn-bg)}
+.pair .pn{display:grid;align-content:center;justify-items:center;gap:4px;min-width:58px}
+.pill{font-family:var(--mono);font-size:.7rem;font-weight:600;letter-spacing:.05em;padding:3px 7px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.bad{color:var(--bad)} .pill.warn{color:var(--warn)}
+.tile{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;display:grid;gap:6px;cursor:pointer;text-align:left;min-width:0}
+.tile img{width:100%;aspect-ratio:1/1;object-fit:contain;background:#0d1116;border-radius:5px}
+.tile .meta{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px;font-size:.78rem;color:var(--muted)}
+.chip{font-family:var(--mono);font-weight:600;font-size:.75rem;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.chip.neg{background:var(--neg);color:var(--neg-ink)}
+.chip.pos{border:1.5px solid var(--ink);color:var(--ink)}
+.chip.unk{border:1.5px dashed var(--warn);color:var(--warn)}
+.edited{font-size:.7rem;color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:9px 10px;display:grid;gap:2px}
+.stat b{font-family:var(--mono);font-size:1.3rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.78rem;color:var(--muted)}
+.stat.alert b{color:var(--bad)}
+ol.steps{margin:0;padding-left:1.2em;display:grid;gap:6px;max-width:68ch}
+ol.steps li::marker{font-family:var(--mono);color:var(--muted)}
+.msg{font-size:.88rem;margin:0;min-height:1.2em}
+.msg.err{color:var(--bad)}
+.spin{width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+details summary{cursor:pointer;font-weight:600}
+code{font-family:var(--mono);font-size:.85em}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Piloto · elemento invertido</div>
+      <h1>Inspetor de Straps</h1>
+      <p class="sub">Fotografe a bateria antes da selagem da tampa. O app procura o quadrado do strap negativo em cada par intercélula: um par certo tem um NEG e um POS.</p>
+    </div>
+  </header>
+
+  <div id="verdict" class="banner"><span class="big">—</span><span class="txt">Carregando a foto de exemplo…</span></div>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="t-foto">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="t-foto">1 · Foto e posições dos straps</h2>
+      </div>
+      <div class="row">
+        <label class="btn primary">Tirar foto<input id="inCam" type="file" accept="image/*" capture="environment"></label>
+        <label class="btn">Galeria<input id="inGal" type="file" accept="image/*"></label>
+        <button class="btn" id="btnEx" type="button">Foto de exemplo</button>
+      </div>
+      <div class="row">
+        <div class="seg" role="group" aria-label="Modo de edição">
+          <button type="button" data-mode="ver" aria-pressed="true">Ver</button>
+          <button type="button" data-mode="desenhar" aria-pressed="false">Marcar</button>
+          <button type="button" data-mode="mover" aria-pressed="false">Mover tudo</button>
+          <button type="button" data-mode="apagar" aria-pressed="false">Apagar</button>
+        </div>
+        <button class="btn" id="btnUndo" type="button">Desfazer</button>
+        <button class="btn" id="btnClear" type="button">Limpar caixas</button>
+      </div>
+      <p class="hint" id="modeHint">Modo Ver: role a página normalmente. Use Marcar para desenhar uma caixa em cada strap.</p>
+      <div class="stage" id="stage"><canvas id="cv" aria-label="Foto da bateria com as caixas dos straps"></canvas><div class="empty" id="empty" hidden>Tire uma foto ou escolha uma da galeria.</div></div>
+      <p class="hint">Marque os straps <b>em pares</b>, na ordem: caixa 1 e 2 formam o par 1 (os dois straps soldados através da mesma parede), 3 e 4 o par 2, e assim por diante. As caixas ficam salvas e são reaproveitadas na próxima foto. Se a bateria estiver um pouco deslocada, use Mover tudo.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="t-res">
+      <h2 id="t-res">2 · Análise</h2>
+      <div class="row">
+        <button class="btn primary big" id="btnRun" type="button">Analisar</button>
+        <div class="seg" role="group" aria-label="Velocidade da análise">
+          <button type="button" data-tier="default" aria-pressed="true">Preciso</button>
+          <button type="button" data-tier="quick" aria-pressed="false">Rápido</button>
+        </div>
+        <button class="btn" id="btnStop" type="button" hidden>Parar</button>
+      </div>
+      <p class="msg" id="runMsg"></p>
+      <div class="pairs" id="pairs"></div>
+      <p class="hint" id="confHint" hidden>Confira cada recorte. Se a IA errou, toque no recorte para corrigir (NEG □ → POS → ?). Depois salve: a sua conferência é o gabarito do teste.</p>
+      <div class="row"><button class="btn" id="btnSave" type="button" hidden>Salvar resultado conferido</button></div>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="t-set">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="t-set">3 · Conjunto de teste neste aparelho</h2>
+      <div class="row">
+        <button class="btn" id="btnZip" type="button">Exportar fotos e planilha (.zip)</button>
+        <button class="btn danger" id="btnWipe" type="button">Apagar dados</button>
+        <span id="wipeConfirm" class="row" hidden><span class="hint">Apagar todos os resultados salvos?</span><button class="btn danger" id="btnWipeYes" type="button">Sim, apagar</button><button class="btn" id="btnWipeNo" type="button">Cancelar</button></span>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <p class="msg" id="setMsg"></p>
+    <p class="hint">O número que decide se dá para confiar é <b>inversões que passaram</b>: tem que ficar em zero. Monte algumas baterias invertidas de propósito para testar. O .zip traz cada recorte separado em pastas negativo/positivo e as fotos completas: é com ele que se treina o modelo que vai rodar na câmera da linha, sem internet.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="t-how">
+    <h2 id="t-how">Como fazer o teste na fábrica</h2>
+    <ol class="steps">
+      <li><b>Fixe o celular</b> num suporte acima do posto (um suporte de celular comum serve), sempre na mesma altura e ângulo. Assim as caixas desenhadas uma vez servem para todas as fotos, como seria com a câmera fixa.</li>
+      <li><b>Cuide da luz.</b> Reflexo no chumbo apaga o quadrado. Teste uma lanterna ou barra de LED bem de lado (luz rasante) e veja se o quadrado fica mais nítido. Desligue o flash do celular.</li>
+      <li><b>Marque as caixas</b> na primeira foto, só na face de cada strap, em pares.</li>
+      <li><b>Analise, confira e salve</b> cada bateria. Faça pelo menos 50 baterias boas e 10 a 20 invertidas de propósito.</li>
+      <li><b>Exporte o .zip</b> e me mande. Com ele dá para medir a taxa de acerto e treinar o modelo local para a câmera barata.</li>
+    </ol>
+    <details>
+      <summary>Como a análise funciona</summary>
+      <p class="hint" style="margin-top:8px">O app recorta cada strap, monta uma única imagem com os recortes numerados e pede ao Claude que diga em qual deles há o quadrado. Usa o seu próprio uso do Claude e precisa de internet: serve para validar o conceito e montar o conjunto de dados. Quando você já tiver baterias conferidas, o app inclui um recorte NEG e um POS confirmados como exemplo, o que melhora o acerto. Na linha, o plano é trocar isso por um modelo treinado com as suas fotos rodando num PC local.</p>
+    </details>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const LAYOUT_KEY = "inspetorStraps.layout.v1";
+const EXAMPLE_BOXES = [ // foto de exemplo (1080x2340), normalizado
+  [190,220,350,430],[150,540,336,780],[150,850,330,1120],[124,1240,320,1530],
+  [720,530,910,780],[740,870,940,1200],[750,1260,940,1580],[750,1680,960,2020]
+].map(([x0,y0,x1,y1]) => ({x:x0/1080, y:y0/2340, w:(x1-x0)/1080, h:(y1-y0)/2340}));
+
+const LABEL = {quadrado:{t:"NEG □", c:"neg"}, sem:{t:"POS", c:"pos"}, incerto:{t:"?", c:"unk"}};
+const NEXT = {quadrado:"sem", sem:"incerto", incerto:"quadrado"};
+
+const S = {src:null, W:0, H:0, boxes:[], hist:[], mode:"ver", res:null, aiVerdict:null, saved:false,
+  tier:"default", ctl:null, photoName:"", isExample:false};
+let sample = null, downloads = null, imgLimits = null;
+
+/* ---------- armazenamento ---------- */
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch{ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+
+const mem = {bats:[], straps:[]};
+let dbp = null;
+function idb(){
+  if (dbp) return dbp;
+  dbp = new Promise((res) => {
+    try{
+      const r = indexedDB.open("inspetor-straps", 1);
+      r.onupgradeneeded = () => { const d = r.result; d.createObjectStore("bats",{keyPath:"id"}); d.createObjectStore("straps",{keyPath:"key"}); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+    }catch{ res(null); }
+  });
+  return dbp;
+}
+async function putAll(store, items){
+  const d = await idb();
+  if (!d){ mem[store].push(...items); return; }
+  await new Promise((res, rej) => { const tx = d.transaction(store,"readwrite"); items.forEach(i => tx.objectStore(store).put(i)); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+}
+async function getAll(store){
+  const d = await idb();
+  if (!d) return mem[store].slice();
+  return new Promise((res) => { const q = d.transaction(store).objectStore(store).getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
+}
+async function wipe(){
+  mem.bats = []; mem.straps = [];
+  const d = await idb(); if (!d) return;
+  await new Promise((res) => { const tx = d.transaction(["bats","straps"],"readwrite"); tx.objectStore("bats").clear(); tx.objectStore("straps").clear(); tx.oncomplete = res; tx.onerror = res; });
+}
+
+/* ---------- imagem ---------- */
+async function loadBlob(blob, name, isExample){
+  const url = URL.createObjectURL(blob);
+  try{
+    const img = new Image(); img.src = url; await img.decode();
+    const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    S.src = c; S.W = c.width; S.H = c.height; S.photoName = name; S.isExample = isExample;
+  } finally { URL.revokeObjectURL(url); }
+  S.res = null; S.saved = false;
+  if (isExample) { S.boxes = EXAMPLE_BOXES.map(b => ({...b})); }
+  else { const lay = lsGet(LAYOUT_KEY); if (Array.isArray(lay)) S.boxes = lay; }
+  S.hist = [];
+  $("empty").hidden = true;
+  render(); renderResults();
+  setVerdict(null, S.boxes.length >= 2 ? (isExample ? "Foto de exemplo (a sua) com 4 pares marcados. Toque em Analisar." : "Foto carregada. Confira se as caixas estão sobre os straps e toque em Analisar.") : "Foto carregada. Use Marcar para desenhar uma caixa em cada strap, em pares.");
+}
+async function loadExample(){
+  try{
+    const r = await fetch("exemplo.jpg"); if (!r.ok) throw 0;
+    await loadBlob(await r.blob(), "exemplo.jpg", true);
+  }catch{
+    $("btnEx").hidden = true; $("empty").hidden = false;
+    S.boxes = lsGet(LAYOUT_KEY) || []; render();
+    setVerdict(null, "Tire uma foto da bateria para começar.");
+  }
+}
+function onFile(e){
+  const f = e.target.files && e.target.files[0]; e.target.value = "";
+  if (f) loadBlob(f, f.name || "foto.jpg", false).catch(() => setVerdict(null, "Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG)."));
+}
+$("inCam").addEventListener("change", onFile);
+$("inGal").addEventListener("change", onFile);
+$("btnEx").addEventListener("click", loadExample);
+
+/* recorte de um strap com margem */
+function cropCanvas(b, size, pad=0.12){
+  const x0 = Math.max(0, (b.x - b.w*pad)*S.W), y0 = Math.max(0, (b.y - b.h*pad)*S.H);
+  const x1 = Math.min(S.W, (b.x + b.w*(1+pad))*S.W), y1 = Math.min(S.H, (b.y + b.h*(1+pad))*S.H);
+  const w = x1-x0, h = y1-y0, k = size / Math.max(w,h);
+  const c = document.createElement("canvas"); c.width = Math.max(1,Math.round(w*k)); c.height = Math.max(1,Math.round(h*k));
+  const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(S.src, x0, y0, w, h, 0, 0, c.width, c.height);
+  return c;
+}
+const toBlob = (c, q=0.9) => new Promise(r => c.toBlob(r, "image/jpeg", q));
+
+/* ---------- desenho ---------- */
+const cv = $("cv"), ctx = cv.getContext("2d");
+function pairOf(i){ return Math.floor(i/2); }
+function pairStatus(p){
+  if (!S.res) return null;
+  const a = S.res[2*p], b = S.res[2*p+1];
+  if (!a || !b) return "warn";
+  if (a.label === "incerto" || b.label === "incerto") return "warn";
+  return a.label !== b.label ? "ok" : "bad";
+}
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function render(){
+  if (!S.src){ cv.width = 0; cv.height = 0; return; }
+  const cw = $("stage").clientWidth || 360, dpr = Math.min(2, window.devicePixelRatio || 1);
+  const ch = cw * S.H / S.W;
+  cv.width = Math.round(cw*dpr); cv.height = Math.round(ch*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.drawImage(S.src, 0, 0, cw, ch);
+  const okC = "#22c55e", badC = "#ef4444", warnC = "#f59e0b", boxC = "#4f8cff";
+  // linhas dos pares
+  for (let p = 0; p*2+1 < S.boxes.length; p++){
+    const a = S.boxes[2*p], b = S.boxes[2*p+1];
+    ctx.save(); ctx.setLineDash([5,4]); ctx.lineWidth = 2;
+    const st = pairStatus(p); ctx.strokeStyle = st === "bad" ? badC : st === "ok" ? okC : st === "warn" ? warnC : "#ffffffcc";
+    ctx.beginPath(); ctx.moveTo((a.x+a.w/2)*cw, (a.y+a.h/2)*ch); ctx.lineTo((b.x+b.w/2)*cw, (b.y+b.h/2)*ch); ctx.stroke(); ctx.restore();
+  }
+  S.boxes.forEach((b, i) => {
+    const x = b.x*cw, y = b.y*ch, w = b.w*cw, h = b.h*ch;
+    const st = pairStatus(pairOf(i));
+    const col = st === "bad" ? badC : st === "ok" ? okC : st === "warn" ? warnC : boxC;
+    ctx.lineWidth = st === "bad" ? 4 : 2.5; ctx.strokeStyle = col; ctx.strokeRect(x, y, w, h);
+    const unpaired = (i === S.boxes.length-1 && S.boxes.length % 2 === 1);
+    let tag = String(i+1);
+    if (S.res && S.res[i]) tag += " " + LABEL[S.res[i].label].t;
+    if (unpaired) tag += " sem par";
+    ctx.font = "600 12px " + css("--mono");
+    const tw = ctx.measureText(tag).width + 10;
+    ctx.fillStyle = unpaired ? warnC : col; ctx.fillRect(x, y, tw, 18);
+    ctx.fillStyle = "#0b0f14"; ctx.fillText(tag, x+5, y+13);
+    if (S.mode === "desenhar"){ ctx.fillStyle = col; ctx.fillRect(x+w-9, y+h-9, 9, 9); }
+  });
+  if (drag && drag.kind === "new"){
+    const r = normRect(drag.a, drag.b);
+    ctx.setLineDash([6,4]); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(r.x*cw, r.y*ch, r.w*cw, r.h*ch); ctx.setLineDash([]);
+  }
+}
+window.addEventListener("resize", () => render());
+
+/* ---------- edição das caixas ---------- */
+const HINTS = {
+  ver:"Modo Ver: role a página normalmente. Use Marcar para desenhar uma caixa em cada strap.",
+  desenhar:"Modo Marcar: arraste para desenhar uma caixa. Arraste uma caixa existente para movê-la, ou o quadradinho do canto para mudar o tamanho.",
+  mover:"Modo Mover tudo: arraste para deslocar todas as caixas juntas.",
+  apagar:"Modo Apagar: toque numa caixa para removê-la. Atenção: a numeração dos pares muda."
+};
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+function setMode(m){
+  S.mode = m;
+  document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
+  cv.style.touchAction = m === "ver" ? "auto" : "none";
+  $("modeHint").textContent = HINTS[m];
+  render();
+}
+function pt(e){ const r = cv.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height, rw:r.width, rh:r.height}; }
+function normRect(a, b){ return {x:Math.min(a.x,b.x), y:Math.min(a.y,b.y), w:Math.abs(a.x-b.x), h:Math.abs(a.y-b.y)}; }
+function hit(p){ for (let i = S.boxes.length-1; i >= 0; i--){ const b = S.boxes[i]; if (p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h) return i; } return -1; }
+function snap(){ S.hist.push(JSON.stringify(S.boxes)); if (S.hist.length > 50) S.hist.shift(); }
+function changed(){ S.res = null; S.saved = false; lsSet(LAYOUT_KEY, S.boxes); renderResults(); setVerdict(null, "Caixas alteradas. Toque em Analisar."); render(); }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+let drag = null;
+cv.addEventListener("pointerdown", (e) => {
+  if (!S.src || S.mode === "ver") return;
+  const p = pt(e); cv.setPointerCapture(e.pointerId); e.preventDefault();
+  if (S.mode === "apagar"){ drag = {kind:"tap", p}; return; }
+  if (S.mode === "mover"){ snap(); drag = {kind:"all", p, orig: S.boxes.map(b => ({...b}))}; return; }
+  const i = hit(p);
+  if (i >= 0){
+    const b = S.boxes[i], hx = 16/p.rw, hy = 16/p.rh;
+    snap();
+    if (p.x > b.x+b.w-hx && p.y > b.y+b.h-hy) drag = {kind:"resize", i, p, orig:{...b}};
+    else drag = {kind:"one", i, p, orig:{...b}};
+  } else drag = {kind:"new", a:p, b:p};
+});
+cv.addEventListener("pointermove", (e) => {
+  if (!drag) return; const p = pt(e);
+  if (drag.kind === "new"){ drag.b = p; }
+  else if (drag.kind === "one"){ const o = drag.orig, b = S.boxes[drag.i]; b.x = clamp(o.x + p.x - drag.p.x, 0, 1-o.w); b.y = clamp(o.y + p.y - drag.p.y, 0, 1-o.h); }
+  else if (drag.kind === "resize"){ const o = drag.orig, b = S.boxes[drag.i]; b.w = clamp(o.w + p.x - drag.p.x, 0.02, 1-o.x); b.h = clamp(o.h + p.y - drag.p.y, 0.02, 1-o.y); }
+  else if (drag.kind === "all"){ const dx = p.x - drag.p.x, dy = p.y - drag.p.y; S.boxes = drag.orig.map(o => ({...o, x:clamp(o.x+dx,0,1-o.w), y:clamp(o.y+dy,0,1-o.h)})); }
+  render();
+});
+function endDrag(e){
+  if (!drag) return; const d = drag; drag = null;
+  if (d.kind === "tap"){ const i = hit(d.p); if (i >= 0){ snap(); S.boxes.splice(i,1); changed(); } return; }
+  if (d.kind === "new"){
+    const r = normRect(d.a, d.b);
+    if (r.w*d.a.rw > 14 && r.h*d.a.rh > 14){ snap(); S.boxes.push(r); changed(); } else render();
+    return;
+  }
+  changed();
+}
+cv.addEventListener("pointerup", endDrag);
+cv.addEventListener("pointercancel", () => { drag = null; render(); });
+$("btnUndo").addEventListener("click", () => { if (!S.hist.length) return; S.boxes = JSON.parse(S.hist.pop()); changed(); });
+$("btnClear").addEventListener("click", () => { if (!S.boxes.length) return; snap(); S.boxes = []; changed(); });
+
+/* ---------- veredito ---------- */
+function setVerdict(kind, text){
+  const v = $("verdict"); v.className = "banner" + (kind ? " " + kind : "");
+  v.querySelector(".big").textContent = kind === "ok" ? "APROVADA" : kind === "bad" ? "REPROVADA" : kind === "warn" ? "VERIFICAR" : "—";
+  v.querySelector(".txt").textContent = text;
+}
+function batteryVerdict(){
+  const n = Math.floor(S.boxes.length/2); let bad = 0, warn = 0;
+  for (let p = 0; p < n; p++){ const s = pairStatus(p); if (s === "bad") bad++; else if (s === "warn") warn++; }
+  if (S.boxes.length % 2) warn++;
+  return {kind: bad ? "bad" : warn ? "warn" : "ok", bad, warn, n};
+}
+function showVerdict(){
+  const v = batteryVerdict();
+  const t = v.kind === "bad" ? `${v.bad} par(es) com dois straps iguais: elemento invertido.` :
+            v.kind === "warn" ? `Nenhuma inversão confirmada, mas ${v.warn} par(es) precisam de conferência visual.` :
+            `${v.n} pares conferidos, todos com um NEG e um POS.`;
+  setVerdict(v.kind, t);
+  return v;
+}
+
+/* ---------- análise ---------- */
+document.querySelectorAll("[data-tier]").forEach(b => b.addEventListener("click", () => {
+  S.tier = b.dataset.tier; document.querySelectorAll("[data-tier]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+}));
+let refs = {neg:null, pos:null};
+async function loadRefs(){
+  const st = await getAll("straps"); st.sort((a,b) => b.ts - a.ts);
+  const n = st.find(s => s.operador === "quadrado"), p = st.find(s => s.operador === "sem");
+  refs = {neg: n ? n.blob : null, pos: p ? p.blob : null};
+}
+async function blobToCanvas(blob){ const u = URL.createObjectURL(blob); try{ const i = new Image(); i.src = u; await i.decode(); const c = document.createElement("canvas"); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext("2d").drawImage(i,0,0); return c; } finally { URL.revokeObjectURL(u); } }
+async function contactSheet(){
+  const tiles = [];
+  if (refs.neg && refs.pos){
+    try{ tiles.push({c: await blobToCanvas(refs.neg), tag:"EXEMPLO NEG (tem quadrado)", ref:true}); tiles.push({c: await blobToCanvas(refs.pos), tag:"EXEMPLO POS (sem quadrado)", ref:true}); }catch{ tiles.length = 0; }
+  }
+  const nRef = tiles.length;
+  S.boxes.forEach((b, i) => tiles.push({c: cropCanvas(b, 600), tag: String(i+1)}));
+  const cols = tiles.length <= 4 ? tiles.length : tiles.length <= 9 ? 3 : 4;
+  const rows = Math.ceil(tiles.length / cols);
+  const T = Math.min(360, Math.floor(Math.sqrt(1150000 / (cols*rows))));
+  const sh = document.createElement("canvas"); sh.width = cols*T; sh.height = rows*T;
+  const g = sh.getContext("2d"); g.fillStyle = "#111"; g.fillRect(0,0,sh.width,sh.height); g.imageSmoothingQuality = "high";
+  tiles.forEach((t, k) => {
+    const x = (k%cols)*T, y = Math.floor(k/cols)*T, band = 30, pad = 6;
+    const aw = T-2*pad, ah = T-band-2*pad, s = Math.min(aw/t.c.width, ah/t.c.height);
+    const w = t.c.width*s, h = t.c.height*s;
+    g.drawImage(t.c, x+pad+(aw-w)/2, y+band+pad+(ah-h)/2, w, h);
+    g.fillStyle = t.ref ? "#1f5fbf" : "#ffd400"; g.fillRect(x, y, T, band);
+    g.fillStyle = t.ref ? "#fff" : "#000"; g.font = `bold ${t.ref ? 13 : 20}px sans-serif`; g.fillText(t.ref ? t.tag : "#" + t.tag, x+8, y+21);
+    g.strokeStyle = "#444"; g.strokeRect(x+.5, y+.5, T-1, T-1);
+  });
+  return {blob: await toBlob(sh, 0.92), nRef};
+}
+function prompt(n, nRef){
+  return `Você é inspetor de qualidade numa fábrica de baterias chumbo-ácido automotivas.
+A imagem é uma grade de recortes. Cada recorte com faixa AMARELA e número (#1 a #${n}) mostra um "strap", a peça de chumbo que une as placas de uma célula, vista de cima.
+${nRef ? "Os dois recortes com faixa AZUL são exemplos já conferidos por um operador: um strap NEGATIVO (com o quadrado) e um POSITIVO (sem o quadrado). Use-os como referência visual.\n" : ""}
+Regra da fábrica: o strap NEGATIVO tem uma pequena marca QUADRADA fundida na face (um quadradinho em baixo ou alto relevo, mais ou menos do tamanho do círculo vizinho). O strap POSITIVO NÃO tem esse quadrado.
+Cuidado:
+- Os dois tipos podem ter uma marca REDONDA (círculo) na face e pontos de solda redondos na borda. Círculos não contam.
+- O quadrado pode estar fraco por reflexo da luz ou desgaste. Procure com atenção bordas retas formando um quadrado pequeno.
+- Riscos, sujeira e textura do chumbo não são o quadrado.
+- Se não der para decidir com segurança, responda "incerto". É melhor "incerto" do que errar.
+Avalie cada recorte numerado de forma independente, sem supor padrão entre eles.
+Responda somente com um array JSON, um objeto por recorte numerado, em ordem:
+[{"n":1,"marca":"quadrado"|"sem"|"incerto","confianca":0.0 a 1.0,"obs":"até 8 palavras"}]`;
+}
+const ERR = {
+  not_granted:"Você não autorizou o uso do Claude nesta página. Recarregue a página para autorizar.",
+  rate_limited:"Muitas análises seguidas. Espere um minuto e tente de novo.",
+  sampling_disabled:"O uso do Claude está indisponível na sua conta agora.",
+  images_unavailable:"Esta visualização não pode enviar imagens. Abra a página no app do Claude ou em claude.ai.",
+  image_rejected:"A imagem foi recusada. Tente uma foto menor.",
+  invalid_json:"A resposta veio num formato inesperado. Toque em Analisar de novo.",
+  cancelled:"Análise interrompida.",
+  session_expired:"Sua sessão expirou. Recarregue a página."
+};
+$("btnRun").addEventListener("click", async () => {
+  if (!S.src){ setMsg("runMsg","Tire uma foto primeiro.", true); return; }
+  if (S.boxes.length < 2){ setMsg("runMsg","Marque pelo menos um par de straps (2 caixas).", true); return; }
+  if (!sample){ setMsg("runMsg","A análise só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
+  const btn = $("btnRun"); btn.disabled = true; $("btnStop").hidden = false;
+  S.ctl = new AbortController();
+  const t0 = performance.now();
+  $("runMsg").className = "msg"; $("runMsg").innerHTML = '<span class="spin" aria-hidden="true"></span> Analisando… (no modo Preciso pode levar até 1 minuto)';
+  try{
+    await loadRefs();
+    const {blob, nRef} = await contactSheet();
+    const n = S.boxes.length;
+    const out = await sample.json(prompt(n, nRef), {images:[blob], modelTier:S.tier, signal:S.ctl.signal, cache:false});
+    if (!Array.isArray(out)) throw {code:"invalid_json"};
+    const res = [];
+    for (let i = 0; i < n; i++){
+      const o = out.find(x => x && Number(x.n) === i+1) || out[i] || {};
+      const m = ["quadrado","sem","incerto"].includes(o.marca) ? o.marca : "incerto";
+      res.push({ai:m, label:m, conf: typeof o.confianca === "number" ? o.confianca : null, obs: String(o.obs || "").slice(0,80), edited:false});
+    }
+    S.res = res; S.saved = false;
+    S.aiVerdict = batteryVerdict().kind;
+    showVerdict(); render(); renderResults();
+    setMsg("runMsg", `Análise concluída em ${((performance.now()-t0)/1000).toFixed(1)} s${nRef ? " (com exemplos conferidos)" : ""}.`);
+  }catch(e){
+    setMsg("runMsg", ERR[e && e.code] || "A análise falhou. Tente de novo em instantes.", e && e.code !== "cancelled");
+  }finally{ btn.disabled = false; $("btnStop").hidden = true; }
+});
+$("btnStop").addEventListener("click", () => S.ctl && S.ctl.abort());
+function setMsg(id, t, err){ const m = $(id); m.className = "msg" + (err ? " err" : ""); m.textContent = t; }
+
+/* ---------- resultados ---------- */
+function renderResults(){
+  const box = $("pairs"); box.textContent = "";
+  $("confHint").hidden = !S.res; $("btnSave").hidden = !S.res;
+  $("btnSave").disabled = S.saved; $("btnSave").textContent = S.saved ? "Salvo no conjunto de teste" : "Salvar resultado conferido";
+  if (!S.res){
+    const p = document.createElement("p"); p.className = "hint";
+    p.textContent = S.boxes.length >= 2 ? `${Math.floor(S.boxes.length/2)} par(es) marcados. Toque em Analisar.` : "Nenhum par marcado ainda.";
+    box.append(p); return;
+  }
+  for (let p = 0; p*2 < S.boxes.length; p++){
+    const st = pairStatus(p) || "warn";
+    const row = document.createElement("div"); row.className = "pair" + (st === "ok" ? "" : " " + st);
+    const pn = document.createElement("div"); pn.className = "pn";
+    pn.innerHTML = `<span class="eyebrow">Par ${p+1}</span><span class="pill ${st}">${st === "ok" ? "OK" : st === "bad" ? "INVERTIDO" : "CONFERIR"}</span>`;
+    row.append(pn);
+    for (const i of [2*p, 2*p+1]){
+      if (i >= S.boxes.length){ const d = document.createElement("div"); d.className = "hint"; d.textContent = "Caixa sem par"; row.append(d); continue; }
+      const r = S.res[i];
+      const t = document.createElement("button"); t.type = "button"; t.className = "tile";
+      t.setAttribute("aria-label", `Strap ${i+1}: ${LABEL[r.label].t}. Toque para corrigir.`);
+      const im = document.createElement("img"); im.alt = ""; im.src = cropCanvas(S.boxes[i], 220).toDataURL("image/jpeg", 0.85);
+      const meta = document.createElement("div"); meta.className = "meta";
+      meta.innerHTML = `<span>#${i+1}${r.conf != null ? " · " + Math.round(r.conf*100) + "%" : ""}</span><span class="chip ${LABEL[r.label].c}">${LABEL[r.label].t}</span>`;
+      t.append(im, meta);
+      if (r.edited){ const ed = document.createElement("span"); ed.className = "edited"; ed.textContent = "corrigido (IA disse " + LABEL[r.ai].t + ")"; t.append(ed); }
+      else if (r.obs){ const ob = document.createElement("span"); ob.className = "hint"; ob.style.fontSize = ".74rem"; ob.textContent = r.obs; t.append(ob); }
+      t.addEventListener("click", () => { r.label = NEXT[r.label]; r.edited = r.label !== r.ai; S.saved = false; showVerdict(); render(); renderResults(); });
+      row.append(t);
+    }
+    box.append(row);
+  }
+}
+
+/* ---------- salvar e estatísticas ---------- */
+$("btnSave").addEventListener("click", async () => {
+  if (!S.res || S.saved) return;
+  const id = new Date().toISOString().replace(/[-:T]/g,"").slice(0,14) + "-" + Math.random().toString(36).slice(2,5);
+  const opVerdict = batteryVerdict().kind;
+  try{
+    const k = Math.min(1, 1280 / Math.max(S.W, S.H));
+    const fc = document.createElement("canvas"); fc.width = Math.round(S.W*k); fc.height = Math.round(S.H*k);
+    fc.getContext("2d").drawImage(S.src, 0, 0, fc.width, fc.height);
+    const foto = await toBlob(fc, 0.85);
+    const straps = [];
+    for (let i = 0; i < S.boxes.length; i++){
+      straps.push({key:id+"_"+(i+1), bat:id, ts:Date.now(), n:i+1, par:pairOf(i)+1, ia:S.res[i].ai, operador:S.res[i].label,
+        conf:S.res[i].conf, box:S.boxes[i], blob: await toBlob(cropCanvas(S.boxes[i], 256), 0.9)});
+    }
+    await putAll("straps", straps);
+    await putAll("bats", [{id, ts:Date.now(), foto, nome:S.photoName, exemplo:S.isExample, veredito_ia:S.aiVerdict, veredito_operador:opVerdict, modo:S.tier}]);
+    S.saved = true; renderResults(); renderStats();
+    setMsg("setMsg", "Resultado salvo neste aparelho.");
+  }catch{ setMsg("setMsg", "Não consegui salvar neste aparelho (armazenamento bloqueado ou cheio).", true); }
+});
+async function renderStats(){
+  const bats = await getAll("bats"), straps = await getAll("straps");
+  const inv = bats.filter(b => b.veredito_operador === "bad");
+  const pegou = inv.filter(b => b.veredito_ia === "bad").length;
+  const passou = inv.filter(b => b.veredito_ia === "ok").length;
+  const falso = bats.filter(b => b.veredito_operador === "ok" && b.veredito_ia === "bad").length;
+  const conc = straps.length ? straps.filter(s => s.ia === s.operador).length / straps.length : null;
+  const items = [
+    [bats.length, "baterias conferidas"],
+    [conc == null ? "—" : (conc*100).toFixed(1) + "%", `acerto da IA em ${straps.length} straps`],
+    [inv.length, "baterias invertidas"],
+    [pegou, "inversões detectadas"],
+    [passou, "inversões que passaram", passou > 0],
+    [falso, "alarmes falsos"]
+  ];
+  const el = $("stats"); el.textContent = "";
+  for (const [v, l, alert] of items){ const d = document.createElement("div"); d.className = "stat" + (alert ? " alert" : ""); d.innerHTML = `<b>${v}</b><span>${l}</span>`; el.append(d); }
+  $("btnZip").disabled = !bats.length;
+}
+$("btnWipe").addEventListener("click", () => { $("btnWipe").hidden = true; $("wipeConfirm").hidden = false; });
+$("btnWipeNo").addEventListener("click", () => { $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; });
+$("btnWipeYes").addEventListener("click", async () => { await wipe(); refs = {neg:null,pos:null}; $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; renderStats(); setMsg("setMsg","Dados apagados."); });
+
+const PASTA = {quadrado:"negativo", sem:"positivo", incerto:"incerto"};
+$("btnZip").addEventListener("click", async () => {
+  if (!window.JSZip){ setMsg("setMsg","Não consegui carregar o compactador. Verifique a internet e recarregue.", true); return; }
+  if (!downloads){ setMsg("setMsg","Exportar só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
+  try{
+    setMsg("setMsg","Montando o arquivo…");
+    const bats = await getAll("bats"), straps = await getAll("straps");
+    const z = new JSZip(), q = (v) => `"${String(v ?? "").replace(/"/g,'""')}"`;
+    const VB = {ok:"APROVADA", bad:"REPROVADA", warn:"VERIFICAR"};
+    const lb = ["bateria;data;arquivo;exemplo;veredito_ia;veredito_operador;modo"];
+    for (const b of bats){ lb.push([b.id, new Date(b.ts).toISOString(), b.nome, b.exemplo ? "sim" : "nao", VB[b.veredito_ia]||"", VB[b.veredito_operador]||"", b.modo].map(q).join(";")); z.file(`fotos/${b.id}.jpg`, b.foto); }
+    const ls = ["bateria;strap;par;ia;operador;acertou;confianca;x;y;w;h;arquivo"];
+    for (const s of straps){
+      const f = `recortes/${PASTA[s.operador]}/${s.bat}_s${s.n}.jpg`;
+      z.file(f, s.blob);
+      ls.push([s.bat, s.n, s.par, s.ia, s.operador, s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
+    }
+    z.file("baterias.csv", "﻿" + lb.join("\n")); z.file("straps.csv", "﻿" + ls.join("\n"));
+    const blob = await z.generateAsync({type:"blob"});
+    await downloads.save({filename:`piloto-straps-${new Date().toISOString().slice(0,10)}.zip`, data:blob});
+    setMsg("setMsg", `Arquivo exportado: ${bats.length} baterias, ${straps.length} recortes.`);
+  }catch(e){
+    setMsg("setMsg", e && e.code === "declined" ? "Exportação cancelada." : "Não consegui exportar. Tente de novo.", !(e && e.code === "declined"));
+  }
+});
+
+/* ---------- início ---------- */
+setMode("ver");
+loadExample();
+renderStats();
+(async () => {
+  if (!window.claude || !window.claude.use) return;
+  try{ sample = await window.claude.use("sample"); }catch{ sample = null; }
+  try{ downloads = await window.claude.use("downloads"); }catch{ downloads = null; }
+  if (sample){ try{ imgLimits = (await sample.limits()).images || null; }catch{ imgLimits = null; } if (!imgLimits) sample = null; }
+  if (!sample) setMsg("runMsg","A análise com IA só funciona com a página aberta no app do Claude ou em claude.ai.", true);
+})();
+})();
+</script>
