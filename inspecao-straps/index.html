@@ -170,6 +170,10 @@ h3{font-size:.95rem;margin:4px 0 0}
       </div>
       <div class="row">
         <button class="btn primary" id="btnDetect" type="button">Detectar straps (IA)</button>
+        <div class="seg" role="group" aria-label="O que detectar">
+          <button type="button" data-fileira="sem_poste" aria-pressed="true">Só fileira sem poste</button>
+          <button type="button" data-fileira="todas" aria-pressed="false">Todas</button>
+        </div>
         <span class="hint">Acha os straps e os pares sozinho. Confira e ajuste se precisar.</span>
       </div>
       <p class="msg" id="detMsg" role="status"></p>
@@ -786,16 +790,29 @@ function gridImage(){
   }
   return c;
 }
-const DETECT_PROMPT = `A imagem mostra, vista de cima, uma bateria chumbo-ácido automotiva ainda sem tampa, sobre uma esteira.
+const DETECT_BASE = `A imagem mostra, vista de cima, uma bateria chumbo-ácido automotiva ainda sem tampa, sobre uma esteira.
 Por cima da foto há uma GRADE AMARELA de referência: os números no topo são a posição horizontal (x) e os da esquerda a posição vertical (y), em porcentagem da imagem, de 0 a 100.
 A bateria tem células (compartimentos separados por paredes). Em cada célula há dois "straps": peças de chumbo prateadas, retangulares, sobre as placas.
 Dois straps de células vizinhas são soldados entre si através da parede que separa as células: esses dois formam um PAR (ligação intercélula). Muitas vezes um deles tem um braço/aba que passa por cima da parede até o outro.
 Os straps que têm um polo (cilindro do terminal) NÃO formam par: não inclua esses.
 Se aparecer mais de uma bateria, use só a bateria inteira mais central da foto.
 Tarefa: liste todos os pares da bateria. Para cada strap, dê a caixa justa da FACE do strap (o bloco retangular; sem o braço comprido), em porcentagem da imagem: [x0, y0, x1, y1].
-Use a grade para medir com cuidado. Uma bateria de 12 V tem 6 células e normalmente 5 pares.
+Use a grade para medir com cuidado. ${"${EXTRA}"}
 Responda somente com JSON neste formato:
 {"pares":[{"a":[x0,y0,x1,y1],"b":[x0,y0,x1,y1]}],"terminais":2,"obs":"até 12 palavras"}`;
+const FIL_KEY = "inspetorStraps.fileira.v1";
+S.fileira = lsGet(FIL_KEY) === "todas" ? "todas" : "sem_poste";
+function setFileira(f, persist){ S.fileira = f; if (persist) lsSet(FIL_KEY, f);
+  document.querySelectorAll("[data-fileira]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.fileira === f))); }
+document.querySelectorAll("[data-fileira]").forEach(b => b.addEventListener("click", () => setFileira(b.dataset.fileira, true)));
+setFileira(S.fileira, false);
+const esperado = () => S.fileira === "todas" ? 5 : 3;
+function detectPrompt(){
+  const extra = S.fileira === "todas"
+    ? "Uma bateria de 12 V tem 6 células e normalmente 5 pares."
+    : "IMPORTANTE: os straps ficam em duas fileiras (uma de cada lado das células). Considere SÓ a fileira que NÃO tem os polos/terminais e liste apenas os pares dessa fileira. Ignore a fileira dos polos. Numa bateria de 12 V essa fileira normalmente tem 3 pares (6 straps).";
+  return DETECT_BASE.replace("${EXTRA}", extra);
+}
 $("btnDetect").addEventListener("click", async () => {
   if (!S.src){ setMsg("detMsg", "Tire uma foto primeiro.", true); return; }
   if (!sample){ setMsg("detMsg", "A detecção só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
@@ -803,7 +820,7 @@ $("btnDetect").addEventListener("click", async () => {
   $("detMsg").className = "msg"; $("detMsg").innerHTML = '<span class="spin" aria-hidden="true"></span> Procurando os straps… (pode levar até 1 minuto)';
   try{
     const img = await toBlob(gridImage(), 0.9);
-    const out = await sample.json(DETECT_PROMPT, {images:[img], modelTier:"default", cache:false});
+    const out = await sample.json(detectPrompt(), {images:[img], modelTier:"default", cache:false});
     const pares = Array.isArray(out && out.pares) ? out.pares : [];
     const ok = (v) => Array.isArray(v) && v.length === 4 && v.every(n => typeof n === "number" && isFinite(n));
     const toBox = (v) => { const [a,b,c,d] = v.map(n => clamp(n/100, 0, 1)); return {x:Math.min(a,c), y:Math.min(b,d), w:Math.abs(c-a), h:Math.abs(d-b)}; };
@@ -814,7 +831,7 @@ $("btnDetect").addEventListener("click", async () => {
     let snapped = 0; const boxes = [];
     for (const pr of list) for (const b of pr){ const sb = snapBox(b); if (sb) snapped++; boxes.push(sb || b); }
     snap(); S.boxes = boxes; changed();
-    setMsg("detMsg", `${list.length} par(es) encontrados${list.length !== 5 ? " (o normal numa bateria de 12 V são 5)" : ""}. Confira se cada caixa está sobre um strap e se os números dos pares fazem sentido; ajuste no modo Marcar se precisar.`, list.length !== 5);
+    setMsg("detMsg", `${list.length} par(es) encontrados${list.length !== esperado() ? ` (o normal aqui são ${esperado()})` : ""}. Confira se cada caixa está sobre um strap e se os números dos pares fazem sentido; ajuste no modo Marcar se precisar.`, list.length !== esperado());
   }catch(e){
     setMsg("detMsg", ERR[e && e.code] || "A detecção falhou. Tente de novo ou marque à mão.", true);
   }finally{ btn.disabled = false; }
