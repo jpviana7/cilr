@@ -46,7 +46,10 @@ h2{font-size:1rem;margin:0;font-weight:600}
 .btn.danger{color:var(--bad);border-color:var(--bad)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.big{min-height:48px;padding:10px 18px;font-size:1rem}
-label.btn input{display:none}
+label.btn{position:relative;overflow:hidden}
+label.btn input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
+.pickhelp{border:1px dashed var(--warn);background:var(--warn-bg);border-radius:8px;padding:10px 12px;display:grid;gap:8px;font-size:.88rem}
+.pickhelp code{word-break:break-all}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{font:inherit;font-size:.85rem;font-weight:500;border:0;background:transparent;color:var(--muted);padding:8px 11px;cursor:pointer;min-height:38px}
 .seg button+button{border-left:1px solid var(--line)}
@@ -146,6 +149,14 @@ h3{font-size:.95rem;margin:4px 0 0}
         <label class="btn primary big">Tirar foto<input id="inCam" type="file" accept="image/*" capture="environment"></label>
         <label class="btn">Galeria<input id="inGal" type="file" accept="image/*"></label>
         <button class="btn" id="btnEx" type="button">Foto de exemplo</button>
+      </div>
+      <p class="msg" id="pickMsg" role="status"></p>
+      <div class="pickhelp" id="pickHelp" hidden>
+        <b>Não abriu a câmera ou a galeria?</b>
+        <span>O app do Claude no celular às vezes não deixa a página escolher arquivos. Abra o mesmo link no navegador do celular (Chrome ou Safari), entrando com a sua conta do Claude: lá a câmera e a galeria funcionam.</span>
+        <code id="pickUrl">https://claude.ai/artifact/BVKyVLsnEHx3Nt5Ng9bHNm</code>
+        <div class="row"><button class="btn" id="btnCopyUrl" type="button">Copiar link</button><button class="btn" id="btnHideHelp" type="button">Fechar</button></div>
+        <span class="hint">No computador, você também pode arrastar uma foto para cá ou colar com Ctrl+V.</span>
       </div>
       <div class="row">
         <div class="seg" role="group" aria-label="Modo de edição">
@@ -327,6 +338,16 @@ async function wipe(){
 
 /* ---------- imagem ---------- */
 async function decodeBlob(blob){
+  if (window.createImageBitmap){
+    try{
+      const bm = await createImageBitmap(blob, {imageOrientation:"from-image"});
+      const k = Math.min(1, 2000 / Math.max(bm.width, bm.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(bm.width*k); c.height = Math.round(bm.height*k);
+      c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height); bm.close && bm.close();
+      return c;
+    }catch{ /* tenta pelo <img> */ }
+  }
   const url = URL.createObjectURL(blob);
   try{
     const img = new Image(); img.src = url; await img.decode();
@@ -358,11 +379,42 @@ async function loadExample(){
     setVerdict(null, "Tire uma foto da bateria para começar.");
   }
 }
-function onFile(e){
-  const f = e.target.files && e.target.files[0]; e.target.value = "";
-  if (f) decodeBlob(f).then(c => openPreview(c, f.name || "foto.jpg"))
-    .catch(() => setVerdict(null, "Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG)."));
+let pickTimer = null, pickLeft = false;
+function handleImageFile(f){
+  clearTimeout(pickTimer); $("pickHelp").hidden = true;
+  if (!f){ setMsg("pickMsg", "Nenhuma foto recebida. Tente de novo."); return; }
+  if (f.type && !f.type.startsWith("image/")){ setMsg("pickMsg", "Esse arquivo não é uma imagem.", true); return; }
+  setMsg("pickMsg", "Abrindo a foto…");
+  decodeBlob(f).then(c => { setMsg("pickMsg", ""); openPreview(c, f.name || "foto.jpg"); })
+    .catch(() => setMsg("pickMsg", /hei[cf]/i.test(f.type + f.name)
+      ? "Foto em formato HEIC não abriu aqui. No iPhone: Ajustes > Câmera > Formatos > Mais Compatível, e tire de novo."
+      : "Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG).", true));
 }
+function onFile(e){
+  const f = e.target.files && e.target.files[0];
+  handleImageFile(f); e.target.value = "";
+}
+/* se nada abrir depois do toque, mostra a ajuda */
+function armPick(){
+  pickLeft = false; clearTimeout(pickTimer);
+  pickTimer = setTimeout(() => { if (!pickLeft) $("pickHelp").hidden = false; }, 2500);
+}
+["inCam","inGal","inCam2"].forEach(id => $(id).addEventListener("click", armPick));
+window.addEventListener("blur", () => { pickLeft = true; });
+document.addEventListener("visibilitychange", () => { if (document.hidden) pickLeft = true; });
+$("btnHideHelp").addEventListener("click", () => { $("pickHelp").hidden = true; });
+$("btnCopyUrl").addEventListener("click", () => {
+  const t = $("pickUrl").textContent;
+  try{
+    navigator.clipboard.writeText(t).then(() => setMsg("pickMsg", "Link copiado. Cole no navegador do celular."),
+      () => { selectText($("pickUrl")); setMsg("pickMsg", "Link selecionado: copie e cole no navegador."); });
+  }catch{ selectText($("pickUrl")); }
+});
+function selectText(el){ const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+/* arrastar ou colar uma foto */
+document.addEventListener("paste", (e) => { const it = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith("image/")); if (it) handleImageFile(it.getAsFile()); });
+$("stage").addEventListener("dragover", (e) => e.preventDefault());
+$("stage").addEventListener("drop", (e) => { e.preventDefault(); const f = e.dataTransfer?.files?.[0]; if (f) handleImageFile(f); });
 $("inCam").addEventListener("change", onFile);
 $("inCam2").addEventListener("change", onFile);
 
