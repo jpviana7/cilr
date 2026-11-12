@@ -267,6 +267,10 @@ h3{font-size:.95rem;margin:4px 0 0}
       <li><b>Exporte o .zip</b> e me mande. Com ele dá para medir a taxa de acerto e treinar o modelo local para a câmera barata.</li>
     </ol>
     <details>
+      <summary>Diagnóstico (mande um print disto se algo não funcionar)</summary>
+      <pre id="diag" style="white-space:pre-wrap;font-family:var(--mono);font-size:.75rem;color:var(--muted);margin:8px 0 0"></pre>
+    </details>
+    <details>
       <summary>Como a análise funciona</summary>
       <p class="hint" style="margin-top:8px">O app recorta cada strap, monta uma única imagem com os recortes numerados e pede ao Claude que diga em qual deles há a marca do negativo. Usa o seu próprio uso do Claude e precisa de internet: serve para validar o conceito e montar o conjunto de dados. Quando você já tiver baterias conferidas, o app inclui um recorte NEG e um POS confirmados como exemplo, o que melhora o acerto. Na linha, o plano é trocar isso por um modelo treinado com as suas fotos rodando num PC local.</p>
     </details>
@@ -820,7 +824,7 @@ function detectPrompt(){
 }
 $("btnDetect").addEventListener("click", async () => {
   if (!S.src){ setMsg("detMsg", "Tire uma foto primeiro.", true); return; }
-  if (!sample){ setMsg("detMsg", "A detecção só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
+  if (!sample){ setMsg("detMsg", aiMsg(), aiState !== "loading"); return; }
   const btn = $("btnDetect"); btn.disabled = true;
   $("detMsg").className = "msg"; $("detMsg").innerHTML = '<span class="spin" aria-hidden="true"></span> Procurando os straps… (pode levar até 1 minuto)';
   try{
@@ -855,7 +859,7 @@ const ERR = {
 $("btnRun").addEventListener("click", async () => {
   if (!S.src){ setMsg("runMsg","Tire uma foto primeiro.", true); return; }
   if (S.boxes.length < 2){ setMsg("runMsg","Marque pelo menos um par de straps (2 caixas).", true); return; }
-  if (!sample){ setMsg("runMsg","A análise só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
+  if (!sample){ setMsg("runMsg", aiMsg(), aiState !== "loading"); return; }
   const btn = $("btnRun"); btn.disabled = true; $("btnStop").hidden = false;
   S.ctl = new AbortController();
   const t0 = performance.now();
@@ -1117,7 +1121,7 @@ $("btnMig").addEventListener("click", async () => {
     const [db, assets, user] = await Promise.all(["db","assets","user"].map(n => window.claude.use(n).catch(() => null)));
     if (db && assets){
       let myId = null; try{ myId = user ? await user.id() : null; }catch{}
-      shared = {db, assets, user, myId};
+      shared = {db, assets, user, myId}; diag.compartilhado = "sim"; showDiag();
       $("storeMode").textContent = "Conectando ao conjunto compartilhado…";
       let first = true;
       const timer = setTimeout(() => { if (first) $("storeMode").textContent = "O conjunto compartilhado está demorando para responder. Verifique a internet."; }, 10000);
@@ -1128,15 +1132,34 @@ $("btnMig").addEventListener("click", async () => {
         renderStats();
       }, () => { clearTimeout(timer); localMode("o conjunto compartilhado não respondeu"); });
       checkMigration();
-    } else localMode(db && !assets ? "sua conta não pode enviar fotos para esta página; peça acesso de Editor" : "");
+    } else { diag.compartilhado = db ? "banco sim, fotos não (precisa ser Editor)" : "não"; showDiag(); localMode(db && !assets ? "sua conta não pode enviar fotos para esta página; peça acesso de Editor" : ""); }
   }catch{ localMode(""); }
 })();
+let aiState = "loading";
+const diag = {pagina: window.claude ? "dentro do Claude" : "fora do Claude", ia: "verificando…", imagens: "—", compartilhado: "—", navegador: navigator.userAgent};
+function aiMsg(){
+  return {
+    loading: "Ainda conectando à IA. Espere alguns segundos e toque de novo.",
+    noframe: "Esta página foi aberta fora do Claude (por exemplo, pela pré-visualização de outro app). Abra o link no app do Claude ou no navegador, entrando na sua conta do Claude.",
+    nosample: "A IA não está liberada para esta conta nesta página. Confira se você entrou na sua conta do Claude, se a página foi compartilhada com você e se o app do Claude está atualizado. Se continuar, abra o link no navegador (Chrome ou Safari) em claude.ai.",
+    noimages: "Esta versão do app do Claude não deixa a página enviar fotos para a IA. Atualize o app ou abra o link no navegador (Chrome ou Safari) em claude.ai."
+  }[aiState] || "";
+}
+function showDiag(){ $("diag").textContent = Object.entries(diag).map(([k, v]) => k + ": " + v).join("\n"); }
+showDiag();
 (async () => {
-  if (!window.claude || !window.claude.use) return;
+  if (!window.claude || !window.claude.use){ aiState = "noframe"; diag.ia = "indisponível (fora do Claude)"; showDiag(); setMsg("runMsg", aiMsg(), true); return; }
   try{ sample = await window.claude.use("sample"); }catch{ sample = null; }
   try{ downloads = await window.claude.use("downloads"); }catch{ downloads = null; }
-  if (sample){ try{ imgLimits = (await sample.limits()).images || null; }catch{ imgLimits = null; } if (!imgLimits) sample = null; }
-  if (!sample) setMsg("runMsg","A análise com IA só funciona com a página aberta no app do Claude ou em claude.ai.", true);
+  if (!sample){ aiState = "nosample"; diag.ia = "não liberada (use(sample) = null)"; }
+  else {
+    diag.ia = "liberada";
+    try{ imgLimits = (await sample.limits()).images || null; }catch{ imgLimits = null; }
+    diag.imagens = imgLimits ? `sim (até ${imgLimits.maxCount} por vez)` : "não";
+    if (!imgLimits){ sample = null; aiState = "noimages"; } else aiState = "ok";
+  }
+  showDiag();
+  if (aiState !== "ok") setMsg("runMsg", aiMsg(), true);
 })();
 })();
 </script>
