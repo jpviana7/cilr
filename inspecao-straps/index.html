@@ -83,6 +83,9 @@ label.btn input{display:none}
 .stat.alert b{color:var(--bad)}
 .goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
 .goal{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px}
+.goalgrps{display:grid;gap:14px}
+.goalgrp{display:grid;gap:8px}
+.goalgrp>.top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
 .goal .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
 .goal .num{font-family:var(--mono);font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums}
 .goal .num small{font-size:.8rem;color:var(--muted);font-weight:500}
@@ -194,17 +197,37 @@ h3{font-size:.95rem;margin:4px 0 0}
     </div>
     <div>
       <div class="eyebrow" style="margin-bottom:6px">Meta de fotos para validar</div>
-      <div class="goals">
-        <div class="goal" id="goalOk">
-          <div class="top"><b>Baterias OK</b><span class="num" id="gOkN">0<small> / 50</small></span></div>
-          <div class="bar" role="progressbar" aria-label="Baterias OK" aria-valuemin="0" id="gOkBar"><i style="width:0"></i></div>
-          <div class="sub2"><span id="gOkTxt">Faltam 50</span><label>Meta <input id="gOkMeta" type="number" min="1" max="999" value="50"></label></div>
+      <div class="goalgrps">
+      <div class="goalgrp">
+        <div class="top"><b>□ Negativo com quadrado</b><span class="hint" id="gAcc_quadrado">acerto da IA: —</span></div>
+        <div class="goals">
+          <div class="goal" id="goal_quadrado_Ok">
+            <div class="top"><b>Baterias OK</b><span class="num" id="gN_quadrado_Ok">0<small> / 50</small></span></div>
+            <div class="bar" role="progressbar" aria-label="Baterias OK" aria-valuemin="0" id="gBar_quadrado_Ok"><i style="width:0"></i></div>
+            <div class="sub2"><span id="gTxt_quadrado_Ok">Faltam 50</span><label>Meta <input id="gMeta_quadrado_Ok" data-goal="quadrado_Ok" type="number" min="1" max="999" value="50"></label></div>
+          </div>
+          <div class="goal nok" id="goal_quadrado_Nok">
+            <div class="top"><b>Baterias NOK (invertidas)</b><span class="num" id="gN_quadrado_Nok">0<small> / 20</small></span></div>
+            <div class="bar" role="progressbar" aria-label="Baterias NOK (invertidas)" aria-valuemin="0" id="gBar_quadrado_Nok"><i style="width:0"></i></div>
+            <div class="sub2"><span id="gTxt_quadrado_Nok">Faltam 20</span><label>Meta <input id="gMeta_quadrado_Nok" data-goal="quadrado_Nok" type="number" min="1" max="999" value="20"></label></div>
+          </div>
         </div>
-        <div class="goal nok" id="goalNok">
-          <div class="top"><b>Baterias NOK (invertidas)</b><span class="num" id="gNokN">0<small> / 20</small></span></div>
-          <div class="bar" role="progressbar" aria-label="Baterias NOK" aria-valuemin="0" id="gNokBar"><i style="width:0"></i></div>
-          <div class="sub2"><span id="gNokTxt">Faltam 20</span><label>Meta <input id="gNokMeta" type="number" min="1" max="999" value="20"></label></div>
+      </div>
+      <div class="goalgrp">
+        <div class="top"><b>○ Negativo com anel</b><span class="hint" id="gAcc_anel">acerto da IA: —</span></div>
+        <div class="goals">
+          <div class="goal" id="goal_anel_Ok">
+            <div class="top"><b>Baterias OK</b><span class="num" id="gN_anel_Ok">0<small> / 50</small></span></div>
+            <div class="bar" role="progressbar" aria-label="Baterias OK" aria-valuemin="0" id="gBar_anel_Ok"><i style="width:0"></i></div>
+            <div class="sub2"><span id="gTxt_anel_Ok">Faltam 50</span><label>Meta <input id="gMeta_anel_Ok" data-goal="anel_Ok" type="number" min="1" max="999" value="50"></label></div>
+          </div>
+          <div class="goal nok" id="goal_anel_Nok">
+            <div class="top"><b>Baterias NOK (invertidas)</b><span class="num" id="gN_anel_Nok">0<small> / 20</small></span></div>
+            <div class="bar" role="progressbar" aria-label="Baterias NOK (invertidas)" aria-valuemin="0" id="gBar_anel_Nok"><i style="width:0"></i></div>
+            <div class="sub2"><span id="gTxt_anel_Nok">Faltam 20</span><label>Meta <input id="gMeta_anel_Nok" data-goal="anel_Nok" type="number" min="1" max="999" value="20"></label></div>
+          </div>
         </div>
+      </div>
       </div>
       <p class="hint" style="margin-top:6px">Conta pela sua conferência (não pela IA). NOK = bateria com elemento invertido; monte de propósito, se preciso. Baterias marcadas como VERIFICAR não entram na meta.</p>
     </div>
@@ -739,22 +762,26 @@ $("btnSave").addEventListener("click", async () => {
     setMsg("setMsg", "Resultado salvo neste aparelho.");
   }catch{ setMsg("setMsg", "Não consegui salvar neste aparelho (armazenamento bloqueado ou cheio).", true); }
 });
-const GOAL_KEY = "inspetorStraps.metas.v1";
-let lastCounts = {Ok:0, Nok:0};
-const metas = Object.assign({Ok:50, Nok:20}, lsGet(GOAL_KEY) || {});
-function drawGoal(k, n){
-  const m = Math.max(1, metas[k] || 1), pct = Math.min(100, 100*n/m), falta = Math.max(0, m - n);
-  $("g"+k+"Meta").value = m;
-  $("g"+k+"N").innerHTML = `${n}<small> / ${m}</small>`;
-  const bar = $("g"+k+"Bar"); bar.firstElementChild.style.width = pct + "%";
+const GOAL_KEY = "inspetorStraps.metas.v2";
+const TIPOS = ["quadrado","anel"];
+let lastCounts = {};
+const metas = {};
+for (const t of TIPOS){ metas[t+"_Ok"] = 50; metas[t+"_Nok"] = 20; }
+Object.assign(metas, lsGet(GOAL_KEY) || {});
+function drawGoal(id, n){
+  const m = Math.max(1, metas[id] || 1), pct = Math.min(100, 100*n/m), falta = Math.max(0, m - n);
+  $("gMeta_"+id).value = m;
+  $("gN_"+id).innerHTML = `${n}<small> / ${m}</small>`;
+  const bar = $("gBar_"+id); bar.firstElementChild.style.width = pct + "%";
   bar.setAttribute("aria-valuemax", m); bar.setAttribute("aria-valuenow", Math.min(n, m));
-  $("g"+k+"Txt").textContent = falta ? `Faltam ${falta} foto${falta > 1 ? "s" : ""}` : "Meta atingida";
-  $("goal"+k).classList.toggle("done", !falta);
+  $("gTxt_"+id).textContent = falta ? `Faltam ${falta} foto${falta > 1 ? "s" : ""}` : "Meta atingida";
+  $("goal_"+id).classList.toggle("done", !falta);
 }
-for (const k of ["Ok","Nok"]) $("g"+k+"Meta").addEventListener("change", (e) => {
-  const v = Math.round(Number(e.target.value)); if (v >= 1 && v <= 999){ metas[k] = v; lsSet(GOAL_KEY, metas); }
-  drawGoal(k, lastCounts[k]);
-});
+document.querySelectorAll("[data-goal]").forEach(inp => inp.addEventListener("change", (e) => {
+  const id = inp.dataset.goal, v = Math.round(Number(e.target.value));
+  if (v >= 1 && v <= 999){ metas[id] = v; lsSet(GOAL_KEY, metas); }
+  drawGoal(id, lastCounts[id] || 0);
+}));
 async function renderStats(){
   const bats = await getAll("bats"), straps = await getAll("straps");
   const inv = bats.filter(b => b.veredito_operador === "bad");
@@ -773,9 +800,14 @@ async function renderStats(){
   const el = $("stats"); el.textContent = "";
   for (const [v, l, alert] of items){ const d = document.createElement("div"); d.className = "stat" + (alert ? " alert" : ""); d.innerHTML = `<b>${v}</b><span>${l}</span>`; el.append(d); }
   $("btnZip").disabled = !bats.length;
-  const nOk = bats.filter(b => b.veredito_operador === "ok").length;
-  drawGoal("Ok", nOk); drawGoal("Nok", inv.length);
-  lastCounts = {Ok:nOk, Nok:inv.length};
+  for (const t of TIPOS){
+    const bt = bats.filter(b => marcaOf(b) === t), st = straps.filter(x => marcaOf(x) === t);
+    lastCounts[t+"_Ok"] = bt.filter(b => b.veredito_operador === "ok").length;
+    lastCounts[t+"_Nok"] = bt.filter(b => b.veredito_operador === "bad").length;
+    drawGoal(t+"_Ok", lastCounts[t+"_Ok"]); drawGoal(t+"_Nok", lastCounts[t+"_Nok"]);
+    const ac = st.length ? (100*st.filter(x => x.ia === x.operador).length/st.length).toFixed(1) + "% em " + st.length + " straps" : "—";
+    $("gAcc_"+t).textContent = "acerto da IA: " + ac;
+  }
 }
 $("btnWipe").addEventListener("click", () => { $("btnWipe").hidden = true; $("wipeConfirm").hidden = false; });
 $("btnWipeNo").addEventListener("click", () => { $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; });
