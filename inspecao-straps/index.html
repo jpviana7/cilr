@@ -128,7 +128,7 @@ h3{font-size:.95rem;margin:4px 0 0}
     <div>
       <div class="eyebrow">Piloto · elemento invertido</div>
       <h1>Inspetor de Straps</h1>
-      <p class="sub">Fotografe a bateria antes da selagem da tampa. O app procura o quadrado do strap negativo em cada par intercélula: um par certo tem um NEG e um POS.</p>
+      <p class="sub">Fotografe a bateria antes da selagem da tampa. O app procura a marca do strap negativo (quadrado ou anel, conforme o modelo) em cada par intercélula: um par certo tem um NEG e um POS.</p>
     </div>
   </header>
 
@@ -162,6 +162,13 @@ h3{font-size:.95rem;margin:4px 0 0}
     <section class="panel" aria-labelledby="t-res">
       <h2 id="t-res">2 · Análise</h2>
       <div class="row">
+        <span class="hint" id="marcaLbl">Marca do negativo neste modelo:</span>
+        <div class="seg" role="group" aria-labelledby="marcaLbl">
+          <button type="button" data-marca="quadrado" aria-pressed="true">□ Quadrado</button>
+          <button type="button" data-marca="anel" aria-pressed="false">○ Anel pequeno</button>
+        </div>
+      </div>
+      <div class="row">
         <button class="btn primary big" id="btnRun" type="button">Analisar</button>
         <div class="seg" role="group" aria-label="Velocidade da análise">
           <button type="button" data-tier="default" aria-pressed="true">Preciso</button>
@@ -171,7 +178,7 @@ h3{font-size:.95rem;margin:4px 0 0}
       </div>
       <p class="msg" id="runMsg"></p>
       <div class="pairs" id="pairs"></div>
-      <p class="hint" id="confHint" hidden>Confira cada recorte. Se a IA errou, toque no recorte para corrigir (NEG □ → POS → ?). Depois salve: a sua conferência é o gabarito do teste.</p>
+      <p class="hint" id="confHint" hidden>Confira cada recorte. Se a IA errou, toque no recorte para corrigir (NEG → POS → ?). Depois salve: a sua conferência é o gabarito do teste.</p>
       <div class="row"><button class="btn" id="btnSave" type="button" hidden>Salvar resultado conferido</button></div>
     </section>
   </div>
@@ -210,14 +217,14 @@ h3{font-size:.95rem;margin:4px 0 0}
     <h2 id="t-how">Como fazer o teste na fábrica</h2>
     <ol class="steps">
       <li><b>Fixe o celular</b> num suporte acima do posto (um suporte de celular comum serve), sempre na mesma altura e ângulo. Assim as caixas desenhadas uma vez servem para todas as fotos, como seria com a câmera fixa.</li>
-      <li><b>Cuide da luz.</b> Reflexo no chumbo apaga o quadrado. Teste uma lanterna ou barra de LED bem de lado (luz rasante) e veja se o quadrado fica mais nítido. Desligue o flash do celular.</li>
+      <li><b>Cuide da luz.</b> Reflexo no chumbo apaga a marca do negativo. Teste uma lanterna ou barra de LED bem de lado (luz rasante) e veja se a marca fica mais nítida. Desligue o flash do celular.</li>
       <li><b>Marque as caixas</b> na primeira foto, só na face de cada strap, em pares.</li>
       <li><b>Analise, confira e salve</b> cada bateria. Faça pelo menos 50 baterias boas e 10 a 20 invertidas de propósito.</li>
       <li><b>Exporte o .zip</b> e me mande. Com ele dá para medir a taxa de acerto e treinar o modelo local para a câmera barata.</li>
     </ol>
     <details>
       <summary>Como a análise funciona</summary>
-      <p class="hint" style="margin-top:8px">O app recorta cada strap, monta uma única imagem com os recortes numerados e pede ao Claude que diga em qual deles há o quadrado. Usa o seu próprio uso do Claude e precisa de internet: serve para validar o conceito e montar o conjunto de dados. Quando você já tiver baterias conferidas, o app inclui um recorte NEG e um POS confirmados como exemplo, o que melhora o acerto. Na linha, o plano é trocar isso por um modelo treinado com as suas fotos rodando num PC local.</p>
+      <p class="hint" style="margin-top:8px">O app recorta cada strap, monta uma única imagem com os recortes numerados e pede ao Claude que diga em qual deles há a marca do negativo. Usa o seu próprio uso do Claude e precisa de internet: serve para validar o conceito e montar o conjunto de dados. Quando você já tiver baterias conferidas, o app inclui um recorte NEG e um POS confirmados como exemplo, o que melhora o acerto. Na linha, o plano é trocar isso por um modelo treinado com as suas fotos rodando num PC local.</p>
     </details>
   </section>
 </div>
@@ -233,7 +240,7 @@ h3{font-size:.95rem;margin:4px 0 0}
     <p class="hint" id="pvBoxHint"></p>
     <ul class="checks" id="pvChecks"></ul>
     <h3 id="pvZoomT">Lupa: cada strap de perto</h3>
-    <p class="hint" id="pvZoomHint">O quadrado do negativo precisa aparecer claro aqui. Se nem você consegue ver, a IA também não vai.</p>
+    <p class="hint" id="pvZoomHint">A marca do negativo (quadrado ou anel) precisa aparecer clara aqui. Se nem você consegue ver, a IA também não vai.</p>
     <div class="zoom" id="pvZoom"></div>
   </div>
   <div class="pv-bar"><div class="row">
@@ -254,7 +261,7 @@ const EXAMPLE_BOXES = [ // foto de exemplo (1080x2340), normalizado
   [720,530,910,780],[740,870,940,1200],[750,1260,940,1580],[750,1680,960,2020]
 ].map(([x0,y0,x1,y1]) => ({x:x0/1080, y:y0/2340, w:(x1-x0)/1080, h:(y1-y0)/2340}));
 
-const LABEL = {quadrado:{t:"NEG □", c:"neg"}, sem:{t:"POS", c:"pos"}, incerto:{t:"?", c:"unk"}};
+const LABEL = {quadrado:{t:"NEG", c:"neg"}, sem:{t:"POS", c:"pos"}, incerto:{t:"?", c:"unk"}};
 const NEXT = {quadrado:"sem", sem:"incerto", incerto:"quadrado"};
 
 const S = {src:null, W:0, H:0, boxes:[], hist:[], mode:"ver", res:null, aiVerdict:null, saved:false,
@@ -311,7 +318,7 @@ async function loadBlob(blob, name, isExample){ commitPhoto(await decodeBlob(blo
 function commitPhoto(c, name, isExample){
   S.src = c; S.W = c.width; S.H = c.height; S.photoName = name; S.isExample = isExample;
   S.res = null; S.saved = false;
-  if (isExample) { S.boxes = EXAMPLE_BOXES.map(b => ({...b})); }
+  if (isExample) { S.boxes = EXAMPLE_BOXES.map(b => ({...b})); if (typeof setMarca === "function") setMarca("quadrado", false); }
   else { const lay = lsGet(LAYOUT_KEY); if (Array.isArray(lay)) S.boxes = lay; }
   S.hist = [];
   $("empty").hidden = true;
@@ -370,10 +377,10 @@ function quality(c, boxes){
     {k:"Luz", val: mean.toFixed(0) + " / 255", lv: L(mean, v => v >= 70 && v <= 200, v => v >= 45 && v <= 225),
      tip:{ok:"Luz adequada.", warn: mean < 70 ? "Um pouco escura. Acrescente luz de lado." : "Um pouco clara demais.", bad: mean < 45 ? "Escura demais. Acrescente luz de lado." : "Clara demais: a marca some. Afaste a luz ou mude o ângulo."}},
     {k:"Reflexo", val: glareP.toFixed(1) + "%", lv: L(glareP, v => v < 5, v => v < 12),
-     tip:{ok:"Pouco reflexo no chumbo.", warn:"Algum reflexo. Incline um pouco o celular ou a luz.", bad:"Muito reflexo: áreas estouradas escondem o quadrado. Desligue o flash e mude o ângulo da luz."}}
+     tip:{ok:"Pouco reflexo no chumbo.", warn:"Algum reflexo. Incline um pouco o celular ou a luz.", bad:"Muito reflexo: áreas estouradas escondem a marca. Desligue o flash e mude o ângulo da luz."}}
   ];
   if (px != null) items.push({k:"Tamanho dos straps", val: px.toFixed(0) + " px", lv: L(px, v => v >= 150, v => v >= 90),
-     tip:{ok:"Straps grandes o bastante na foto.", warn:"Straps um pouco pequenos. Aproxime o celular ou use zoom 2x.", bad:"Straps pequenos demais para ver o quadrado. Aproxime o celular."}});
+     tip:{ok:"Straps grandes o bastante na foto.", warn:"Straps um pouco pequenos. Aproxime o celular ou use zoom 2x.", bad:"Straps pequenos demais para ver a marca. Aproxime o celular."}});
   return items;
 }
 function drawPreview(){
@@ -571,9 +578,19 @@ function showVerdict(){
 document.querySelectorAll("[data-tier]").forEach(b => b.addEventListener("click", () => {
   S.tier = b.dataset.tier; document.querySelectorAll("[data-tier]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
 }));
+const MARCA_KEY = "inspetorStraps.marca.v1";
+S.marca = lsGet(MARCA_KEY) === "anel" ? "anel" : "quadrado";
+function setMarca(m, persist){
+  if (m !== S.marca && S.res){ S.res = null; S.saved = false; renderResults(); render(); setVerdict(null, "Tipo de marca alterado. Toque em Analisar."); }
+  S.marca = m; if (persist) lsSet(MARCA_KEY, m);
+  document.querySelectorAll("[data-marca]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.marca === m)));
+}
+document.querySelectorAll("[data-marca]").forEach(b => b.addEventListener("click", () => setMarca(b.dataset.marca, true)));
+setMarca(S.marca, false);
+const marcaOf = (r) => r.marca || "quadrado";
 let refs = {neg:null, pos:null};
 async function loadRefs(){
-  const st = await getAll("straps"); st.sort((a,b) => b.ts - a.ts);
+  const st = (await getAll("straps")).filter(s => marcaOf(s) === S.marca); st.sort((a,b) => b.ts - a.ts);
   const n = st.find(s => s.operador === "quadrado"), p = st.find(s => s.operador === "sem");
   refs = {neg: n ? n.blob : null, pos: p ? p.blob : null};
 }
@@ -581,7 +598,7 @@ async function blobToCanvas(blob){ const u = URL.createObjectURL(blob); try{ con
 async function contactSheet(){
   const tiles = [];
   if (refs.neg && refs.pos){
-    try{ tiles.push({c: await blobToCanvas(refs.neg), tag:"EXEMPLO NEG (tem quadrado)", ref:true}); tiles.push({c: await blobToCanvas(refs.pos), tag:"EXEMPLO POS (sem quadrado)", ref:true}); }catch{ tiles.length = 0; }
+    try{ tiles.push({c: await blobToCanvas(refs.neg), tag: S.marca === "anel" ? "EXEMPLO NEG (tem anel)" : "EXEMPLO NEG (tem quadrado)", ref:true}); tiles.push({c: await blobToCanvas(refs.pos), tag: S.marca === "anel" ? "EXEMPLO POS (sem anel)" : "EXEMPLO POS (sem quadrado)", ref:true}); }catch{ tiles.length = 0; }
   }
   const nRef = tiles.length;
   S.boxes.forEach((b, i) => tiles.push({c: cropCanvas(b, 600), tag: String(i+1)}));
@@ -602,18 +619,28 @@ async function contactSheet(){
   return {blob: await toBlob(sh, 0.92), nRef};
 }
 function prompt(n, nRef){
-  return `Você é inspetor de qualidade numa fábrica de baterias chumbo-ácido automotivas.
-A imagem é uma grade de recortes. Cada recorte com faixa AMARELA e número (#1 a #${n}) mostra um "strap", a peça de chumbo que une as placas de uma célula, vista de cima.
-${nRef ? "Os dois recortes com faixa AZUL são exemplos já conferidos por um operador: um strap NEGATIVO (com o quadrado) e um POSITIVO (sem o quadrado). Use-os como referência visual.\n" : ""}
-Regra da fábrica: o strap NEGATIVO tem uma pequena marca QUADRADA fundida na face (um quadradinho em baixo ou alto relevo, mais ou menos do tamanho do círculo vizinho). O strap POSITIVO NÃO tem esse quadrado.
+  const anel = S.marca === "anel";
+  const marca = anel ? "o anel" : "o quadrado";
+  const regra = anel
+    ? `Regra da fábrica para este modelo: o strap NEGATIVO tem uma pequena marca em forma de ANEL (só o contorno de um círculo pequeno, em baixo relevo, sem preenchimento), em geral perto de um canto ou borda da face. O strap POSITIVO NÃO tem esse anel.
+Cuidado:
+- TODOS os straps, positivos e negativos, têm também um ponto redondo MAIOR e CHEIO (um pino abaulado e brilhante, em geral sobre a nervura central). Esse ponto cheio NÃO é a marca: ignore-o.
+- Pontos de solda redondos na aba ou no braço que passa sobre a parede também não contam.
+- O anel é menor que o pino, tem o miolo da mesma cor da superfície e aparece como um traço circular fino.
+- O anel pode estar fraco por reflexo ou desgaste. Procure com atenção.`
+    : `Regra da fábrica para este modelo: o strap NEGATIVO tem uma pequena marca QUADRADA fundida na face (um quadradinho em baixo ou alto relevo, mais ou menos do tamanho do círculo vizinho). O strap POSITIVO NÃO tem esse quadrado.
 Cuidado:
 - Os dois tipos podem ter uma marca REDONDA (círculo) na face e pontos de solda redondos na borda. Círculos não contam.
-- O quadrado pode estar fraco por reflexo da luz ou desgaste. Procure com atenção bordas retas formando um quadrado pequeno.
-- Riscos, sujeira e textura do chumbo não são o quadrado.
+- O quadrado pode estar fraco por reflexo da luz ou desgaste. Procure com atenção bordas retas formando um quadrado pequeno.`;
+  return `Você é inspetor de qualidade numa fábrica de baterias chumbo-ácido automotivas.
+A imagem é uma grade de recortes. Cada recorte com faixa AMARELA e número (#1 a #${n}) mostra um "strap", a peça de chumbo que une as placas de uma célula, vista de cima.
+${nRef ? `Os dois recortes com faixa AZUL são exemplos já conferidos por um operador: um strap NEGATIVO (com ${marca}) e um POSITIVO (sem ${marca}). Use-os como referência visual.\n` : ""}
+${regra}
+- Riscos, sujeira e textura do chumbo não são a marca.
 - Se não der para decidir com segurança, responda "incerto". É melhor "incerto" do que errar.
 Avalie cada recorte numerado de forma independente, sem supor padrão entre eles.
 Responda somente com um array JSON, um objeto por recorte numerado, em ordem:
-[{"n":1,"marca":"quadrado"|"sem"|"incerto","confianca":0.0 a 1.0,"obs":"até 8 palavras"}]`;
+[{"n":1,"tipo":"neg"|"pos"|"incerto","confianca":0.0 a 1.0,"obs":"até 8 palavras"}]`;
 }
 const ERR = {
   not_granted:"Você não autorizou o uso do Claude nesta página. Recarregue a página para autorizar.",
@@ -642,7 +669,8 @@ $("btnRun").addEventListener("click", async () => {
     const res = [];
     for (let i = 0; i < n; i++){
       const o = out.find(x => x && Number(x.n) === i+1) || out[i] || {};
-      const m = ["quadrado","sem","incerto"].includes(o.marca) ? o.marca : "incerto";
+      const TIPO = {neg:"quadrado", pos:"sem", incerto:"incerto"};
+      const m = TIPO[String(o.tipo || "").toLowerCase()] || "incerto";
       res.push({ai:m, label:m, conf: typeof o.confianca === "number" ? o.confianca : null, obs: String(o.obs || "").slice(0,80), edited:false});
     }
     S.res = res; S.saved = false;
@@ -703,10 +731,10 @@ $("btnSave").addEventListener("click", async () => {
     const straps = [];
     for (let i = 0; i < S.boxes.length; i++){
       straps.push({key:id+"_"+(i+1), bat:id, ts:Date.now(), n:i+1, par:pairOf(i)+1, ia:S.res[i].ai, operador:S.res[i].label,
-        conf:S.res[i].conf, box:S.boxes[i], blob: await toBlob(cropCanvas(S.boxes[i], 256), 0.9)});
+        conf:S.res[i].conf, box:S.boxes[i], marca:S.marca, blob: await toBlob(cropCanvas(S.boxes[i], 256), 0.9)});
     }
     await putAll("straps", straps);
-    await putAll("bats", [{id, ts:Date.now(), foto, nome:S.photoName, exemplo:S.isExample, veredito_ia:S.aiVerdict, veredito_operador:opVerdict, modo:S.tier}]);
+    await putAll("bats", [{id, ts:Date.now(), foto, nome:S.photoName, exemplo:S.isExample, veredito_ia:S.aiVerdict, veredito_operador:opVerdict, modo:S.tier, marca:S.marca}]);
     S.saved = true; renderResults(); renderStats();
     setMsg("setMsg", "Resultado salvo neste aparelho.");
   }catch{ setMsg("setMsg", "Não consegui salvar neste aparelho (armazenamento bloqueado ou cheio).", true); }
@@ -762,13 +790,14 @@ $("btnZip").addEventListener("click", async () => {
     const bats = await getAll("bats"), straps = await getAll("straps");
     const z = new JSZip(), q = (v) => `"${String(v ?? "").replace(/"/g,'""')}"`;
     const VB = {ok:"APROVADA", bad:"REPROVADA", warn:"VERIFICAR"};
-    const lb = ["bateria;data;arquivo;exemplo;veredito_ia;veredito_operador;modo"];
-    for (const b of bats){ lb.push([b.id, new Date(b.ts).toISOString(), b.nome, b.exemplo ? "sim" : "nao", VB[b.veredito_ia]||"", VB[b.veredito_operador]||"", b.modo].map(q).join(";")); z.file(`fotos/${b.id}.jpg`, b.foto); }
-    const ls = ["bateria;strap;par;ia;operador;acertou;confianca;x;y;w;h;arquivo"];
+    const lb = ["bateria;data;arquivo;exemplo;marca_negativo;veredito_ia;veredito_operador;modo"];
+    for (const b of bats){ lb.push([b.id, new Date(b.ts).toISOString(), b.nome, b.exemplo ? "sim" : "nao", marcaOf(b), VB[b.veredito_ia]||"", VB[b.veredito_operador]||"", b.modo].map(q).join(";")); z.file(`fotos/${b.id}.jpg`, b.foto); }
+    const ls = ["bateria;strap;par;marca_negativo;ia;operador;acertou;confianca;x;y;w;h;arquivo"];
+    const NP = {quadrado:"neg", sem:"pos", incerto:"incerto"};
     for (const s of straps){
-      const f = `recortes/${PASTA[s.operador]}/${s.bat}_s${s.n}.jpg`;
+      const f = `recortes/${marcaOf(s)}/${PASTA[s.operador]}/${s.bat}_s${s.n}.jpg`;
       z.file(f, s.blob);
-      ls.push([s.bat, s.n, s.par, s.ia, s.operador, s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
+      ls.push([s.bat, s.n, s.par, marcaOf(s), NP[s.ia], NP[s.operador], s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
     }
     z.file("baterias.csv", "﻿" + lb.join("\n")); z.file("straps.csv", "﻿" + ls.join("\n"));
     const blob = await z.generateAsync({type:"blob"});
