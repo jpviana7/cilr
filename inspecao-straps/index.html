@@ -208,7 +208,7 @@ h3{font-size:.95rem;margin:4px 0 0}
 
   <section class="panel" aria-labelledby="t-set">
     <div class="row" style="justify-content:space-between">
-      <h2 id="t-set">3 · Conjunto de teste neste aparelho</h2>
+      <div><h2 id="t-set">3 · Conjunto de teste</h2><p class="hint" id="storeMode">Verificando onde salvar…</p></div>
       <div class="row">
         <button class="btn" id="btnZip" type="button">Exportar fotos e planilha (.zip)</button>
         <button class="btn danger" id="btnWipe" type="button">Apagar dados</button>
@@ -253,6 +253,7 @@ h3{font-size:.95rem;margin:4px 0 0}
     </div>
     <div class="stats" id="stats"></div>
     <p class="msg" id="setMsg"></p>
+    <div class="row" id="migRow" hidden><button class="btn" id="btnMig" type="button"></button><span class="hint">Envia as baterias salvas só neste celular para o conjunto que todos veem.</span></div>
     <p class="hint">O número que decide se dá para confiar é <b>inversões que passaram</b>: tem que ficar em zero. Monte algumas baterias invertidas de propósito para testar. O .zip traz cada recorte separado em pastas negativo/positivo e as fotos completas: é com ele que se treina o modelo que vai rodar na câmera da linha, sem internet.</p>
   </section>
 
@@ -681,9 +682,13 @@ setMarca(S.marca, false);
 const marcaOf = (r) => r.marca || "quadrado";
 let refs = {neg:null, pos:null};
 async function loadRefs(){
-  const st = (await getAll("straps")).filter(s => marcaOf(s) === S.marca); st.sort((a,b) => b.ts - a.ts);
-  const n = st.find(s => s.operador === "quadrado"), p = st.find(s => s.operador === "sem");
-  refs = {neg: n ? n.blob : null, pos: p ? p.blob : null};
+  const all = [];
+  for (const b of cache) for (const st of b.straps || []) if (marcaOf(b) === S.marca) all.push({b, st});
+  all.sort((x, y) => y.b.ts - x.b.ts);
+  const n = all.find(x => x.st.operador === "quadrado"), p = all.find(x => x.st.operador === "sem");
+  const get = (x) => x ? strapBlob(x.b, x.st).catch(() => null) : Promise.resolve(null);
+  const [neg, pos] = await Promise.all([get(n), get(p)]);
+  refs = {neg, pos};
 }
 async function blobToCanvas(blob){ const u = URL.createObjectURL(blob); try{ const i = new Image(); i.src = u; await i.decode(); const c = document.createElement("canvas"); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext("2d").drawImage(i,0,0); return c; } finally { URL.revokeObjectURL(u); } }
 async function contactSheet(){
@@ -913,26 +918,72 @@ function renderResults(){
   }
 }
 
-/* ---------- salvar e estatísticas ---------- */
+/* ---------- conjunto de teste: compartilhado (db + assets) ou só neste aparelho ---------- */
+let shared = null;          // {db, assets, user, myId}
+let cache = [];             // baterias: {id, ts, ..., straps:[...]}
+const CELL = 256;
+function normLocal(bats, straps){
+  return bats.map(b => ({...b, straps: straps.filter(x => x.bat === b.id).sort((a, c) => a.n - c.n)}));
+}
+async function refreshLocal(){ if (shared) return; cache = normLocal(await getAll("bats"), await getAll("straps")); renderStats(); }
+const stripCache = new Map();
+function loadAsset(id){
+  if (!stripCache.has(id)) stripCache.set(id, fetch("/_blob/" + id).then(r => { if (!r.ok) throw new Error("asset"); return r.blob(); }));
+  return stripCache.get(id);
+}
+async function strapBlob(b, st){
+  if (st.blob) return st.blob;
+  const strip = await blobToCanvas(await loadAsset(b.stripId));
+  const i = (st.n - 1), cw = st.cw || CELL, ch = st.ch || CELL;
+  const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+  c.getContext("2d").drawImage(strip, i*CELL + (CELL-cw)/2, (CELL-ch)/2, cw, ch, 0, 0, cw, ch);
+  return toBlob(c, 0.92);
+}
+async function fotoBlob(b){ return b.foto instanceof Blob ? b.foto : loadAsset(b.fotoId); }
+function makeStrip(crops){
+  const c = document.createElement("canvas"); c.width = CELL*crops.length; c.height = CELL;
+  const g = c.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height);
+  crops.forEach((k, i) => g.drawImage(k, i*CELL + (CELL-k.width)/2, (CELL-k.height)/2));
+  return c;
+}
+async function saveShared(meta, foto, strapMeta, crops){
+  const strip = await toBlob(makeStrip(crops), 0.9);
+  const f = await shared.assets.upload(foto), st = await shared.assets.upload(strip);
+  await shared.db.doc("bats/" + meta.id).set({...meta, autor: shared.myId || null, fotoId: f.id, stripId: st.id,
+    straps: strapMeta.map((x, i) => ({...x, cw: crops[i].width, ch: crops[i].height}))});
+}
+
 $("btnSave").addEventListener("click", async () => {
   if (!S.res || S.saved) return;
-  const id = new Date().toISOString().replace(/[-:T]/g,"").slice(0,14) + "-" + Math.random().toString(36).slice(2,5);
+  const id = new Date().toISOString().replace(/[-:T]/g,"").slice(0,14) + "-" + Math.random().toString(36).slice(2,6);
   const opVerdict = batteryVerdict().kind;
+  const btn = $("btnSave"); btn.disabled = true; setMsg("setMsg", "Salvando…");
   try{
     const k = Math.min(1, 1280 / Math.max(S.W, S.H));
     const fc = document.createElement("canvas"); fc.width = Math.round(S.W*k); fc.height = Math.round(S.H*k);
     fc.getContext("2d").drawImage(S.src, 0, 0, fc.width, fc.height);
     const foto = await toBlob(fc, 0.85);
-    const straps = [];
-    for (let i = 0; i < S.boxes.length; i++){
-      straps.push({key:id+"_"+(i+1), bat:id, ts:Date.now(), n:i+1, par:pairOf(i)+1, ia:S.res[i].ai, operador:S.res[i].label,
-        conf:S.res[i].conf, box:S.boxes[i], marca:S.marca, blob: await toBlob(cropCanvas(S.boxes[i], 256), 0.9)});
+    const crops = S.boxes.map(b => cropCanvas(b, CELL));
+    const meta = {id, ts:Date.now(), nome:S.photoName, exemplo:S.isExample, veredito_ia:S.aiVerdict, veredito_operador:opVerdict, modo:S.tier, marca:S.marca};
+    const strapMeta = S.boxes.map((b, i) => ({n:i+1, par:pairOf(i)+1, ia:S.res[i].ai, operador:S.res[i].label, conf:S.res[i].conf, box:b}));
+    if (shared){
+      await saveShared(meta, foto, strapMeta, crops);
+      setMsg("setMsg", "Salvo no conjunto compartilhado.");
+    } else {
+      const straps = [];
+      for (let i = 0; i < crops.length; i++) straps.push({...strapMeta[i], key:id+"_"+(i+1), bat:id, ts:meta.ts, marca:S.marca, blob: await toBlob(crops[i], 0.9)});
+      await putAll("straps", straps); await putAll("bats", [{...meta, foto}]);
+      setMsg("setMsg", "Resultado salvo neste aparelho.");
+      refreshLocal();
     }
-    await putAll("straps", straps);
-    await putAll("bats", [{id, ts:Date.now(), foto, nome:S.photoName, exemplo:S.isExample, veredito_ia:S.aiVerdict, veredito_operador:opVerdict, modo:S.tier, marca:S.marca}]);
-    S.saved = true; renderResults(); renderStats();
-    setMsg("setMsg", "Resultado salvo neste aparelho.");
-  }catch{ setMsg("setMsg", "Não consegui salvar neste aparelho (armazenamento bloqueado ou cheio).", true); }
+    S.saved = true; renderResults();
+  }catch(e){
+    btn.disabled = false;
+    const c = e && e.code;
+    setMsg("setMsg", c === "quota_or_state" || c === "quota_exceeded" ? "O espaço do conjunto compartilhado acabou. Exporte o .zip e me avise." :
+      c === "not_granted" || c === "permission_denied" ? "Sua conta não tem permissão para salvar no conjunto compartilhado. Peça acesso de Editor ao dono da página." :
+      "Não consegui salvar. Verifique a internet e tente de novo.", true);
+  }
 });
 const GOAL_KEY = "inspetorStraps.metas.v2";
 const TIPOS = ["quadrado","anel"];
@@ -955,7 +1006,7 @@ document.querySelectorAll("[data-goal]").forEach(inp => inp.addEventListener("ch
   drawGoal(id, lastCounts[id] || 0);
 }));
 async function renderStats(){
-  const bats = await getAll("bats"), straps = await getAll("straps");
+  const bats = cache, straps = cache.flatMap(b => (b.straps || []).map(x => ({...x, marca: marcaOf(b)})));
   const inv = bats.filter(b => b.veredito_operador === "bad");
   const pegou = inv.filter(b => b.veredito_ia === "bad").length;
   const passou = inv.filter(b => b.veredito_ia === "ok").length;
@@ -969,6 +1020,12 @@ async function renderStats(){
     [passou, "inversões que passaram", passou > 0],
     [falso, "alarmes falsos"]
   ];
+  if (shared && bats.length){
+    const ids = [...new Set(bats.map(b => b.autor).filter(Boolean))];
+    let names = {}; try{ names = await shared.user.profiles(ids); }catch{}
+    const per = ids.map(i => `${names[i]?.isMe ? "você" : (names[i]?.name || "outra pessoa")}: ${bats.filter(b => b.autor === i).length}`);
+    $("storeMode").textContent = "Conjunto compartilhado: todos com acesso à página veem e alimentam os mesmos dados. " + (per.length ? "Por pessoa — " + per.join(" · ") : "");
+  }
   const el = $("stats"); el.textContent = "";
   for (const [v, l, alert] of items){ const d = document.createElement("div"); d.className = "stat" + (alert ? " alert" : ""); d.innerHTML = `<b>${v}</b><span>${l}</span>`; el.append(d); }
   $("btnZip").disabled = !bats.length;
@@ -983,7 +1040,19 @@ async function renderStats(){
 }
 $("btnWipe").addEventListener("click", () => { $("btnWipe").hidden = true; $("wipeConfirm").hidden = false; });
 $("btnWipeNo").addEventListener("click", () => { $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; });
-$("btnWipeYes").addEventListener("click", async () => { await wipe(); refs = {neg:null,pos:null}; $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; renderStats(); setMsg("setMsg","Dados apagados."); });
+$("btnWipeYes").addEventListener("click", async () => {
+  $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; refs = {neg:null, pos:null};
+  if (shared){
+    setMsg("setMsg", "Apagando…");
+    try{
+      for (const b of cache.slice()){
+        await shared.db.doc("bats/" + b.id).delete();
+        for (const a of [b.fotoId, b.stripId]) if (a) await shared.assets.delete(a).catch(() => {});
+      }
+      setMsg("setMsg", "Dados do conjunto compartilhado apagados.");
+    }catch{ setMsg("setMsg", "Não consegui apagar tudo. Só quem é Editor da página pode apagar dados de outras pessoas.", true); }
+  } else { await wipe(); await refreshLocal(); setMsg("setMsg", "Dados apagados."); }
+});
 
 const PASTA = {quadrado:"negativo", sem:"positivo", incerto:"incerto"};
 $("btnZip").addEventListener("click", async () => {
@@ -991,22 +1060,26 @@ $("btnZip").addEventListener("click", async () => {
   if (!downloads){ setMsg("setMsg","Exportar só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
   try{
     setMsg("setMsg","Montando o arquivo…");
-    const bats = await getAll("bats"), straps = await getAll("straps");
+    const bats = cache;
     const z = new JSZip(), q = (v) => `"${String(v ?? "").replace(/"/g,'""')}"`;
     const VB = {ok:"APROVADA", bad:"REPROVADA", warn:"VERIFICAR"};
     const lb = ["bateria;data;arquivo;exemplo;marca_negativo;veredito_ia;veredito_operador;modo"];
-    for (const b of bats){ lb.push([b.id, new Date(b.ts).toISOString(), b.nome, b.exemplo ? "sim" : "nao", marcaOf(b), VB[b.veredito_ia]||"", VB[b.veredito_operador]||"", b.modo].map(q).join(";")); z.file(`fotos/${b.id}.jpg`, b.foto); }
+    let nStraps = 0;
+    for (const b of bats){ lb.push([b.id, new Date(b.ts).toISOString(), b.nome, b.exemplo ? "sim" : "nao", marcaOf(b), VB[b.veredito_ia]||"", VB[b.veredito_operador]||"", b.modo].map(q).join(";"));
+      setMsg("setMsg", `Montando o arquivo… ${bats.indexOf(b)+1}/${bats.length}`);
+      z.file(`fotos/${b.id}.jpg`, await fotoBlob(b)); }
     const ls = ["bateria;strap;par;marca_negativo;ia;operador;acertou;confianca;x;y;w;h;arquivo"];
     const NP = {quadrado:"neg", sem:"pos", incerto:"incerto"};
-    for (const s of straps){
-      const f = `recortes/${marcaOf(s)}/${PASTA[s.operador]}/${s.bat}_s${s.n}.jpg`;
-      z.file(f, s.blob);
-      ls.push([s.bat, s.n, s.par, marcaOf(s), NP[s.ia], NP[s.operador], s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
+    for (const b of bats) for (const s of b.straps || []){
+      nStraps++;
+      const f = `recortes/${marcaOf(b)}/${PASTA[s.operador]}/${b.id}_s${s.n}.jpg`;
+      z.file(f, await strapBlob(b, s));
+      ls.push([b.id, s.n, s.par, marcaOf(b), NP[s.ia], NP[s.operador], s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
     }
     z.file("baterias.csv", "﻿" + lb.join("\n")); z.file("straps.csv", "﻿" + ls.join("\n"));
     const blob = await z.generateAsync({type:"blob"});
     await downloads.save({filename:`piloto-straps-${new Date().toISOString().slice(0,10)}.zip`, data:blob});
-    setMsg("setMsg", `Arquivo exportado: ${bats.length} baterias, ${straps.length} recortes.`);
+    setMsg("setMsg", `Arquivo exportado: ${bats.length} baterias, ${nStraps} recortes.`);
   }catch(e){
     setMsg("setMsg", e && e.code === "declined" ? "Exportação cancelada." : "Não consegui exportar. Tente de novo.", !(e && e.code === "declined"));
   }
@@ -1015,7 +1088,49 @@ $("btnZip").addEventListener("click", async () => {
 /* ---------- início ---------- */
 setMode("ver");
 loadExample();
-renderStats();
+function localMode(why){
+  shared = null;
+  $("storeMode").textContent = "Salvando só neste aparelho" + (why ? ` (${why})` : "") + ". Cada celular terá o seu conjunto; exporte o .zip de cada um.";
+  refreshLocal();
+}
+async function checkMigration(){
+  const n = (await getAll("bats")).length;
+  $("migRow").hidden = !n; $("btnMig").textContent = `Enviar ${n} bateria${n > 1 ? "s" : ""} deste celular`;
+}
+$("btnMig").addEventListener("click", async () => {
+  if (!shared) return; const btn = $("btnMig"); btn.disabled = true;
+  try{
+    const loc = normLocal(await getAll("bats"), await getAll("straps"));
+    for (let k = 0; k < loc.length; k++){
+      const b = loc[k]; setMsg("setMsg", `Enviando ${k+1}/${loc.length}…`);
+      const crops = await Promise.all(b.straps.map(x => blobToCanvas(x.blob)));
+      const {foto, straps, ...meta} = b;
+      await saveShared(meta, foto, straps.map(({n, par, ia, operador, conf, box}) => ({n, par, ia, operador, conf: conf ?? null, box})), crops);
+    }
+    await wipe(); $("migRow").hidden = true; setMsg("setMsg", `${loc.length} bateria(s) enviadas ao conjunto compartilhado.`);
+  }catch{ setMsg("setMsg", "O envio parou no meio. Toque de novo para continuar (o que já foi enviado não se perde).", true); }
+  finally{ btn.disabled = false; }
+});
+(async () => {
+  if (!window.claude || !window.claude.use){ localMode("aberto fora do Claude"); return; }
+  try{
+    const [db, assets, user] = await Promise.all(["db","assets","user"].map(n => window.claude.use(n).catch(() => null)));
+    if (db && assets){
+      let myId = null; try{ myId = user ? await user.id() : null; }catch{}
+      shared = {db, assets, user, myId};
+      $("storeMode").textContent = "Conectando ao conjunto compartilhado…";
+      let first = true;
+      const timer = setTimeout(() => { if (first) $("storeMode").textContent = "O conjunto compartilhado está demorando para responder. Verifique a internet."; }, 10000);
+      db.collection("bats").onSnapshot((snap) => {
+        first = false; clearTimeout(timer);
+        cache = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => a.ts - b.ts);
+        $("storeMode").textContent = "Conjunto compartilhado: todos com acesso à página veem e alimentam os mesmos dados.";
+        renderStats();
+      }, () => { clearTimeout(timer); localMode("o conjunto compartilhado não respondeu"); });
+      checkMigration();
+    } else localMode(db && !assets ? "sua conta não pode enviar fotos para esta página; peça acesso de Editor" : "");
+  }catch{ localMode(""); }
+})();
 (async () => {
   if (!window.claude || !window.claude.use) return;
   try{ sample = await window.claude.use("sample"); }catch{ sample = null; }
