@@ -1151,12 +1151,14 @@ $("btnMig").addEventListener("click", async () => {
   }catch{ localMode(""); }
 })();
 let aiState = "loading";
-const diag = {pagina: window.claude ? "dentro do Claude" : "fora do Claude", ia: "verificando…", imagens: "—", compartilhado: "—", navegador: navigator.userAgent};
+let framed = true; try{ framed = window.top !== window; }catch{ framed = true; }
+const diag = {versao: "12", moldura: framed ? "sim (dentro da tela do Claude)" : "não (página aberta sozinha)", pagina: window.claude ? "com runtime do Claude" : "sem runtime do Claude", ia: "verificando…", imagens: "—", compartilhado: "—", navegador: navigator.userAgent};
 function aiMsg(){
   return {
     loading: "Ainda conectando à IA. Espere alguns segundos e toque de novo.",
     noframe: "Esta página foi aberta fora do Claude (por exemplo, pela pré-visualização de outro app). Abra o link no app do Claude ou no navegador, entrando na sua conta do Claude.",
     nosample: "A IA não está liberada para esta conta nesta página. Confira se você entrou na sua conta do Claude, se a página foi compartilhada com você e se o app do Claude está atualizado. Se continuar, abra o link no navegador (Chrome ou Safari) em claude.ai.",
+    toplevel: "A página abriu sozinha, fora da tela do Claude, e assim a IA e o conjunto compartilhado não funcionam. Abra pelo endereço claude.ai/artifact/BVKyVLsnEHx3Nt5Ng9bHNm (no app do Claude ou no Chrome com a conta do Claude entrada), não pelo endereço que aparece depois de abrir a página.",
     denied: "O uso do Claude foi recusado nesta página. Toque em Liberar IA nesta página e ative o Claude. Enquanto isso, use Conferir sem IA.",
     unavail: "A IA não está disponível para esta conta nesta página (acontece com contas de fora da organização de quem criou a página, ou planos sem esse recurso). Toque em Liberar IA para tentar; se não der, use Conferir sem IA: a sua conferência é o que mais importa para treinar o modelo.",
     noimages: "Esta versão do app do Claude não deixa a página enviar fotos para a IA. Atualize o app ou abra o link no navegador (Chrome ou Safari) em claude.ai."
@@ -1173,6 +1175,7 @@ async function acquireAI(){
     if (!imgLimits){ sample = null; aiState = "noimages"; } else aiState = "ok";
   }
   if (perms){ try{ const st = await perms.state(); diag.permissoes = Object.entries(st).map(([k, v]) => k + "=" + v).join(", ") || "(nenhuma)"; if (!sample && st.sample === "denied") aiState = "denied"; if (!sample && !("sample" in st)) aiState = "unavail"; }catch{} }
+  if (!sample && !framed) aiState = "toplevel";
   showDiag();
   $("permRow").hidden = aiState === "ok" || aiState === "noframe";
   if (aiState !== "ok") setMsg("runMsg", aiMsg(), true); else setMsg("runMsg", "");
