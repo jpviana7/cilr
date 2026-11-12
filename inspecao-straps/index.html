@@ -90,6 +90,26 @@ ol.steps li::marker{font-family:var(--mono);color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.spin{animation:none}}
 details summary{cursor:pointer;font-weight:600}
 code{font-family:var(--mono);font-size:.85em}
+.pv{position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.pv-in{max-width:760px;margin:0 auto;display:grid;gap:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 110px}
+.pv-bar{position:fixed;left:0;right:0;bottom:0;z-index:51;background:var(--panel);border-top:1px solid var(--line);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+.pv-bar .row{max-width:760px;margin:0 auto;justify-content:flex-end}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.checks li{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--panel)}
+.checks .dot{width:10px;height:10px;border-radius:50%}
+.checks .dot.ok{background:var(--ok)} .checks .dot.warn{background:var(--warn)} .checks .dot.bad{background:var(--bad)}
+.checks b{font-weight:600}
+.checks .val{font-family:var(--mono);font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.checks .tip{grid-column:2 / 4;font-size:.84rem;color:var(--muted)}
+.zoom{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.zoom figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--panel);display:grid;gap:4px}
+.zoom img{width:100%;aspect-ratio:1/1;object-fit:contain;background:#0d1116;border-radius:5px}
+.zoom figcaption{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+h3{font-size:.95rem;margin:4px 0 0}
 </style>
 
 <div class="wrap">
@@ -109,7 +129,7 @@ code{font-family:var(--mono);font-size:.85em}
         <h2 id="t-foto">1 · Foto e posições dos straps</h2>
       </div>
       <div class="row">
-        <label class="btn primary">Tirar foto<input id="inCam" type="file" accept="image/*" capture="environment"></label>
+        <label class="btn primary big">Tirar foto<input id="inCam" type="file" accept="image/*" capture="environment"></label>
         <label class="btn">Galeria<input id="inGal" type="file" accept="image/*"></label>
         <button class="btn" id="btnEx" type="button">Foto de exemplo</button>
       </div>
@@ -175,6 +195,27 @@ code{font-family:var(--mono);font-size:.85em}
   </section>
 </div>
 
+<div id="pv" class="pv" hidden role="dialog" aria-modal="true" aria-labelledby="pvT">
+  <div class="pv-in">
+    <div class="row" style="justify-content:space-between">
+      <div><div class="eyebrow">Antes de analisar</div><h2 id="pvT" style="font-size:1.2rem">Conferir foto</h2></div>
+      <button class="btn" id="pvClose" type="button">Cancelar</button>
+    </div>
+    <div id="pvVerdict" class="banner"><span class="big">—</span><span class="txt"></span></div>
+    <div class="stage"><canvas id="pvCv" aria-label="Foto tirada, com as caixas dos straps por cima"></canvas></div>
+    <p class="hint" id="pvBoxHint"></p>
+    <ul class="checks" id="pvChecks"></ul>
+    <h3 id="pvZoomT">Lupa: cada strap de perto</h3>
+    <p class="hint" id="pvZoomHint">O quadrado do negativo precisa aparecer claro aqui. Se nem você consegue ver, a IA também não vai.</p>
+    <div class="zoom" id="pvZoom"></div>
+  </div>
+  <div class="pv-bar"><div class="row">
+    <label class="btn">Tirar outra<input id="inCam2" type="file" accept="image/*" capture="environment"></label>
+    <button class="btn" id="pvUse" type="button">Usar foto</button>
+    <button class="btn primary" id="pvRun" type="button">Usar e analisar</button>
+  </div></div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (() => {
@@ -228,7 +269,7 @@ async function wipe(){
 }
 
 /* ---------- imagem ---------- */
-async function loadBlob(blob, name, isExample){
+async function decodeBlob(blob){
   const url = URL.createObjectURL(blob);
   try{
     const img = new Image(); img.src = url; await img.decode();
@@ -236,8 +277,12 @@ async function loadBlob(blob, name, isExample){
     const c = document.createElement("canvas");
     c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    S.src = c; S.W = c.width; S.H = c.height; S.photoName = name; S.isExample = isExample;
+    return c;
   } finally { URL.revokeObjectURL(url); }
+}
+async function loadBlob(blob, name, isExample){ commitPhoto(await decodeBlob(blob), name, isExample); }
+function commitPhoto(c, name, isExample){
+  S.src = c; S.W = c.width; S.H = c.height; S.photoName = name; S.isExample = isExample;
   S.res = null; S.saved = false;
   if (isExample) { S.boxes = EXAMPLE_BOXES.map(b => ({...b})); }
   else { const lay = lsGet(LAYOUT_KEY); if (Array.isArray(lay)) S.boxes = lay; }
@@ -258,19 +303,112 @@ async function loadExample(){
 }
 function onFile(e){
   const f = e.target.files && e.target.files[0]; e.target.value = "";
-  if (f) loadBlob(f, f.name || "foto.jpg", false).catch(() => setVerdict(null, "Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG)."));
+  if (f) decodeBlob(f).then(c => openPreview(c, f.name || "foto.jpg"))
+    .catch(() => setVerdict(null, "Não consegui abrir essa imagem. Tente outra foto (JPG ou PNG)."));
 }
 $("inCam").addEventListener("change", onFile);
+$("inCam2").addEventListener("change", onFile);
+
+/* ---------- tela de conferência da foto ---------- */
+let pending = null;
+function previewBoxes(){ return S.boxes.length ? S.boxes : (Array.isArray(lsGet(LAYOUT_KEY)) ? lsGet(LAYOUT_KEY) : []); }
+function grayCrop(c, b, w){
+  const sx = b.x*c.width, sy = b.y*c.height, sw = Math.max(1, b.w*c.width), sh = Math.max(1, b.h*c.height);
+  const h = Math.max(8, Math.round(w*sh/sw));
+  const t = document.createElement("canvas"); t.width = w; t.height = h;
+  const g = t.getContext("2d", {willReadFrequently:true}); g.drawImage(c, sx, sy, sw, sh, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data, a = new Float32Array(w*h);
+  for (let i = 0; i < a.length; i++) a[i] = 0.299*d[4*i] + 0.587*d[4*i+1] + 0.114*d[4*i+2];
+  return {a, w, h};
+}
+function lapVar({a, w, h}){
+  let s = 0, s2 = 0, n = 0;
+  for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++){
+    const i = y*w + x, l = a[i-1] + a[i+1] + a[i-w] + a[i+w] - 4*a[i]; s += l; s2 += l*l; n++;
+  }
+  return n ? s2/n - (s/n)*(s/n) : 0;
+}
+const median = (v) => { const s = v.slice().sort((a,b) => a-b); return s.length ? s[Math.floor(s.length/2)] : 0; };
+function quality(c, boxes){
+  const regions = boxes.length ? boxes : [{x:.15, y:.15, w:.7, h:.7}];
+  const sharp = median(regions.map(b => lapVar(grayCrop(c, b, 200))));
+  let sum = 0, n = 0, glare = 0;
+  for (const b of regions){ const {a} = grayCrop(c, b, 120); for (const v of a){ sum += v; n++; if (v >= 250) glare++; } }
+  const mean = n ? sum/n : 0, glareP = n ? 100*glare/n : 0;
+  const px = boxes.length ? median(boxes.map(b => b.w*c.width)) : null;
+  const L = (v, okF, warnF) => okF(v) ? "ok" : warnF(v) ? "warn" : "bad";
+  const items = [
+    {k:"Nitidez", val: sharp.toFixed(0), lv: L(sharp, v => v >= 50, v => v >= 20),
+     tip:{ok:"Foco bom.", warn:"Um pouco borrada. Apoie o celular e toque na tela em cima de um strap para focar.", bad:"Tremida ou fora de foco. Apoie o celular, toque num strap para focar e tire outra."}},
+    {k:"Luz", val: mean.toFixed(0) + " / 255", lv: L(mean, v => v >= 70 && v <= 200, v => v >= 45 && v <= 225),
+     tip:{ok:"Luz adequada.", warn: mean < 70 ? "Um pouco escura. Acrescente luz de lado." : "Um pouco clara demais.", bad: mean < 45 ? "Escura demais. Acrescente luz de lado." : "Clara demais: a marca some. Afaste a luz ou mude o ângulo."}},
+    {k:"Reflexo", val: glareP.toFixed(1) + "%", lv: L(glareP, v => v < 5, v => v < 12),
+     tip:{ok:"Pouco reflexo no chumbo.", warn:"Algum reflexo. Incline um pouco o celular ou a luz.", bad:"Muito reflexo: áreas estouradas escondem o quadrado. Desligue o flash e mude o ângulo da luz."}}
+  ];
+  if (px != null) items.push({k:"Tamanho dos straps", val: px.toFixed(0) + " px", lv: L(px, v => v >= 150, v => v >= 90),
+     tip:{ok:"Straps grandes o bastante na foto.", warn:"Straps um pouco pequenos. Aproxime o celular ou use zoom 2x.", bad:"Straps pequenos demais para ver o quadrado. Aproxime o celular."}});
+  return items;
+}
+function drawPreview(){
+  if (!pending) return;
+  const cv2 = $("pvCv"), c = pending.c, boxes = previewBoxes();
+  const cw = cv2.parentElement.clientWidth || 360, ch = cw * c.height / c.width, dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv2.width = Math.round(cw*dpr); cv2.height = Math.round(ch*dpr);
+  const g = cv2.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0); g.drawImage(c, 0, 0, cw, ch);
+  g.font = "600 12px " + css("--mono");
+  boxes.forEach((b, i) => {
+    g.strokeStyle = "#4f8cff"; g.lineWidth = 2.5; g.strokeRect(b.x*cw, b.y*ch, b.w*cw, b.h*ch);
+    const t = String(i+1), tw = g.measureText(t).width + 10;
+    g.fillStyle = "#4f8cff"; g.fillRect(b.x*cw, b.y*ch, tw, 18); g.fillStyle = "#0b0f14"; g.fillText(t, b.x*cw+5, b.y*ch+13);
+  });
+}
+function openPreview(c, name){
+  pending = {c, name};
+  const boxes = previewBoxes(), items = quality(c, boxes);
+  $("pv").hidden = false; document.body.style.overflow = "hidden"; $("pv").scrollTop = 0;
+  drawPreview();
+  $("pvBoxHint").textContent = boxes.length
+    ? "As caixas azuis são as posições salvas. Se não caíram sobre os straps, você pode usar a foto e ajustar com Mover tudo, ou tirar outra na mesma posição de antes."
+    : "Ainda não há caixas marcadas. Depois de usar a foto, marque os straps em pares.";
+  const ul = $("pvChecks"); ul.textContent = "";
+  for (const it of items){
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="dot ${it.lv}" aria-hidden="true"></span><b></b><span class="val"></span><span class="tip"></span>`;
+    li.querySelector("b").textContent = it.k + (it.lv === "ok" ? "" : it.lv === "warn" ? " · atenção" : " · ruim");
+    li.querySelector(".val").textContent = it.val; li.querySelector(".tip").textContent = it.tip[it.lv];
+    ul.append(li);
+  }
+  const bad = items.some(i => i.lv === "bad"), warn = items.some(i => i.lv === "warn");
+  const v = $("pvVerdict"); v.className = "banner " + (bad ? "bad" : warn ? "warn" : "ok");
+  v.querySelector(".big").textContent = bad ? "REFAZER" : warn ? "DÁ PARA USAR" : "FOTO BOA";
+  v.querySelector(".txt").textContent = bad ? "Recomendo tirar outra antes de analisar. Veja o que corrigir abaixo." : warn ? "A foto serve, mas pode melhorar. Veja as dicas abaixo." : "Nitidez, luz e reflexo dentro do esperado.";
+  const z = $("pvZoom"); z.textContent = "";
+  $("pvZoomT").hidden = $("pvZoomHint").hidden = !boxes.length;
+  boxes.forEach((b, i) => {
+    const f = document.createElement("figure"), im = document.createElement("img"), cap = document.createElement("figcaption");
+    im.alt = "Strap " + (i+1) + " ampliado"; im.src = cropCanvas(b, 320, 0.12, c).toDataURL("image/jpeg", 0.88);
+    cap.textContent = "#" + (i+1) + " · par " + (pairOf(i)+1); f.append(im, cap); z.append(f);
+  });
+  $("pvClose").focus();
+}
+function closePreview(){ $("pv").hidden = true; document.body.style.overflow = ""; pending = null; }
+$("pvClose").addEventListener("click", closePreview);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("pv").hidden) closePreview(); });
+window.addEventListener("resize", () => { if (!$("pv").hidden) drawPreview(); });
+function acceptPreview(){ if (!pending) return false; const p = pending; closePreview(); commitPhoto(p.c, p.name, false); $("stage").scrollIntoView({block:"start"}); return true; }
+$("pvUse").addEventListener("click", acceptPreview);
+$("pvRun").addEventListener("click", () => { if (acceptPreview()) $("btnRun").click(); });
 $("inGal").addEventListener("change", onFile);
 $("btnEx").addEventListener("click", loadExample);
 
 /* recorte de um strap com margem */
-function cropCanvas(b, size, pad=0.12){
-  const x0 = Math.max(0, (b.x - b.w*pad)*S.W), y0 = Math.max(0, (b.y - b.h*pad)*S.H);
-  const x1 = Math.min(S.W, (b.x + b.w*(1+pad))*S.W), y1 = Math.min(S.H, (b.y + b.h*(1+pad))*S.H);
+function cropCanvas(b, size, pad=0.12, src=S.src){
+  const SW = src.width, SH = src.height;
+  const x0 = Math.max(0, (b.x - b.w*pad)*SW), y0 = Math.max(0, (b.y - b.h*pad)*SH);
+  const x1 = Math.min(SW, (b.x + b.w*(1+pad))*SW), y1 = Math.min(SH, (b.y + b.h*(1+pad))*SH);
   const w = x1-x0, h = y1-y0, k = size / Math.max(w,h);
   const c = document.createElement("canvas"); c.width = Math.max(1,Math.round(w*k)); c.height = Math.max(1,Math.round(h*k));
-  const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(S.src, x0, y0, w, h, 0, 0, c.width, c.height);
+  const g = c.getContext("2d"); g.imageSmoothingQuality = "high"; g.drawImage(src, x0, y0, w, h, 0, 0, c.width, c.height);
   return c;
 }
 const toBlob = (c, q=0.9) => new Promise(r => c.toBlob(r, "image/jpeg", q));
