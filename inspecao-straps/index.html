@@ -198,6 +198,10 @@ h3{font-size:.95rem;margin:4px 0 0}
           <button type="button" data-tier="quick" aria-pressed="false">Rápido</button>
         </div>
         <button class="btn" id="btnStop" type="button" hidden>Parar</button>
+        <button class="btn" id="btnManual" type="button">Conferir sem IA</button>
+      </div>
+      <div class="row" id="permRow" hidden>
+        <button class="btn" id="btnPerm" type="button">Liberar IA nesta página</button>
       </div>
       <p class="msg" id="runMsg"></p>
       <div class="pairs" id="pairs"></div>
@@ -886,6 +890,14 @@ $("btnRun").addEventListener("click", async () => {
   }finally{ btn.disabled = false; $("btnStop").hidden = true; }
 });
 $("btnStop").addEventListener("click", () => S.ctl && S.ctl.abort());
+$("btnManual").addEventListener("click", () => {
+  if (!S.src){ setMsg("runMsg","Tire uma foto primeiro.", true); return; }
+  if (S.boxes.length < 2){ setMsg("runMsg","Marque pelo menos um par de straps (2 caixas).", true); return; }
+  S.res = S.boxes.map(() => ({ai:null, label:"incerto", conf:null, obs:"", edited:false}));
+  S.aiVerdict = null; S.saved = false;
+  showVerdict(); render(); renderResults();
+  setMsg("runMsg", "Conferência sem IA: toque em cada recorte e marque NEG (tem a marca) ou POS (sem a marca). Depois salve.");
+});
 function setMsg(id, t, err){ const m = $(id); m.className = "msg" + (err ? " err" : ""); m.textContent = t; }
 
 /* ---------- resultados ---------- */
@@ -913,9 +925,10 @@ function renderResults(){
       const meta = document.createElement("div"); meta.className = "meta";
       meta.innerHTML = `<span>#${i+1}${r.conf != null ? " · " + Math.round(r.conf*100) + "%" : ""}</span><span class="chip ${LABEL[r.label].c}">${LABEL[r.label].t}</span>`;
       t.append(im, meta);
-      if (r.edited){ const ed = document.createElement("span"); ed.className = "edited"; ed.textContent = "corrigido (IA disse " + LABEL[r.ai].t + ")"; t.append(ed); }
+      if (r.ai === null){ const ed = document.createElement("span"); ed.className = "edited"; ed.textContent = "marcado pelo operador"; t.append(ed); }
+      else if (r.edited){ const ed = document.createElement("span"); ed.className = "edited"; ed.textContent = "corrigido (IA disse " + LABEL[r.ai].t + ")"; t.append(ed); }
       else if (r.obs){ const ob = document.createElement("span"); ob.className = "hint"; ob.style.fontSize = ".74rem"; ob.textContent = r.obs; t.append(ob); }
-      t.addEventListener("click", () => { r.label = NEXT[r.label]; r.edited = r.label !== r.ai; S.saved = false; showVerdict(); render(); renderResults(); });
+      t.addEventListener("click", () => { r.label = NEXT[r.label]; r.edited = r.ai !== null && r.label !== r.ai; S.saved = false; showVerdict(); render(); renderResults(); });
       row.append(t);
     }
     box.append(row);
@@ -1015,10 +1028,12 @@ async function renderStats(){
   const pegou = inv.filter(b => b.veredito_ia === "bad").length;
   const passou = inv.filter(b => b.veredito_ia === "ok").length;
   const falso = bats.filter(b => b.veredito_operador === "ok" && b.veredito_ia === "bad").length;
-  const conc = straps.length ? straps.filter(s => s.ia === s.operador).length / straps.length : null;
+  const comIA = straps.filter(s => s.ia != null);
+  const conc = comIA.length ? comIA.filter(s => s.ia === s.operador).length / comIA.length : null;
   const items = [
     [bats.length, "baterias conferidas"],
-    [conc == null ? "—" : (conc*100).toFixed(1) + "%", `acerto da IA em ${straps.length} straps`],
+    [conc == null ? "—" : (conc*100).toFixed(1) + "%", `acerto da IA em ${comIA.length} straps`],
+    [bats.filter(b => !b.veredito_ia).length, "conferidas sem IA"],
     [inv.length, "baterias invertidas"],
     [pegou, "inversões detectadas"],
     [passou, "inversões que passaram", passou > 0],
@@ -1038,7 +1053,7 @@ async function renderStats(){
     lastCounts[t+"_Ok"] = bt.filter(b => b.veredito_operador === "ok").length;
     lastCounts[t+"_Nok"] = bt.filter(b => b.veredito_operador === "bad").length;
     drawGoal(t+"_Ok", lastCounts[t+"_Ok"]); drawGoal(t+"_Nok", lastCounts[t+"_Nok"]);
-    const ac = st.length ? (100*st.filter(x => x.ia === x.operador).length/st.length).toFixed(1) + "% em " + st.length + " straps" : "—";
+    const sa = st.filter(x => x.ia != null); const ac = sa.length ? (100*sa.filter(x => x.ia === x.operador).length/sa.length).toFixed(1) + "% em " + sa.length + " straps" : "—";
     $("gAcc_"+t).textContent = "acerto da IA: " + ac;
   }
 }
@@ -1078,7 +1093,7 @@ $("btnZip").addEventListener("click", async () => {
       nStraps++;
       const f = `recortes/${marcaOf(b)}/${PASTA[s.operador]}/${b.id}_s${s.n}.jpg`;
       z.file(f, await strapBlob(b, s));
-      ls.push([b.id, s.n, s.par, marcaOf(b), NP[s.ia], NP[s.operador], s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
+      ls.push([b.id, s.n, s.par, marcaOf(b), s.ia == null ? "" : NP[s.ia], NP[s.operador], s.ia == null ? "" : s.ia === s.operador ? "sim" : "nao", s.conf ?? "", ...["x","y","w","h"].map(k => s.box[k].toFixed(4)), f].map(q).join(";"));
     }
     z.file("baterias.csv", "﻿" + lb.join("\n")); z.file("straps.csv", "﻿" + ls.join("\n"));
     const blob = await z.generateAsync({type:"blob"});
@@ -1142,15 +1157,14 @@ function aiMsg(){
     loading: "Ainda conectando à IA. Espere alguns segundos e toque de novo.",
     noframe: "Esta página foi aberta fora do Claude (por exemplo, pela pré-visualização de outro app). Abra o link no app do Claude ou no navegador, entrando na sua conta do Claude.",
     nosample: "A IA não está liberada para esta conta nesta página. Confira se você entrou na sua conta do Claude, se a página foi compartilhada com você e se o app do Claude está atualizado. Se continuar, abra o link no navegador (Chrome ou Safari) em claude.ai.",
+    denied: "O uso do Claude foi recusado nesta página. Toque em Liberar IA nesta página e ative o Claude. Enquanto isso, use Conferir sem IA.",
+    unavail: "A IA não está disponível para esta conta nesta página (acontece com contas de fora da organização de quem criou a página, ou planos sem esse recurso). Toque em Liberar IA para tentar; se não der, use Conferir sem IA: a sua conferência é o que mais importa para treinar o modelo.",
     noimages: "Esta versão do app do Claude não deixa a página enviar fotos para a IA. Atualize o app ou abra o link no navegador (Chrome ou Safari) em claude.ai."
   }[aiState] || "";
 }
-function showDiag(){ $("diag").textContent = Object.entries(diag).map(([k, v]) => k + ": " + v).join("\n"); }
-showDiag();
-(async () => {
-  if (!window.claude || !window.claude.use){ aiState = "noframe"; diag.ia = "indisponível (fora do Claude)"; showDiag(); setMsg("runMsg", aiMsg(), true); return; }
+let perms = null;
+async function acquireAI(){
   try{ sample = await window.claude.use("sample"); }catch{ sample = null; }
-  try{ downloads = await window.claude.use("downloads"); }catch{ downloads = null; }
   if (!sample){ aiState = "nosample"; diag.ia = "não liberada (use(sample) = null)"; }
   else {
     diag.ia = "liberada";
@@ -1158,8 +1172,27 @@ showDiag();
     diag.imagens = imgLimits ? `sim (até ${imgLimits.maxCount} por vez)` : "não";
     if (!imgLimits){ sample = null; aiState = "noimages"; } else aiState = "ok";
   }
+  if (perms){ try{ const st = await perms.state(); diag.permissoes = Object.entries(st).map(([k, v]) => k + "=" + v).join(", ") || "(nenhuma)"; if (!sample && st.sample === "denied") aiState = "denied"; if (!sample && !("sample" in st)) aiState = "unavail"; }catch{} }
   showDiag();
-  if (aiState !== "ok") setMsg("runMsg", aiMsg(), true);
+  $("permRow").hidden = aiState === "ok" || aiState === "noframe";
+  if (aiState !== "ok") setMsg("runMsg", aiMsg(), true); else setMsg("runMsg", "");
+}
+function showDiag(){ $("diag").textContent = Object.entries(diag).map(([k, v]) => k + ": " + v).join("\n"); }
+showDiag();
+$("btnPerm").addEventListener("click", async () => {
+  if (!perms){ setMsg("runMsg", "Não consegui abrir as permissões. Use o menu Permissões da página (no topo do app do Claude).", true); return; }
+  try{
+    const st = await perms.state();
+    if (st.sample === "denied") await perms.manage(); else await perms.request(["sample","db","assets","downloads","user"]);
+  }catch{ setMsg("runMsg", "Não consegui abrir as permissões. Use o menu Permissões da página (no topo do app do Claude).", true); }
+  await acquireAI();
+  if (!shared && aiState === "ok") setMsg("setMsg", "Se o conjunto continuar como “só neste aparelho”, feche e abra a página de novo.");
+});
+(async () => {
+  if (!window.claude || !window.claude.use){ aiState = "noframe"; diag.ia = "indisponível (fora do Claude)"; showDiag(); setMsg("runMsg", aiMsg(), true); return; }
+  try{ perms = await window.claude.use("permissions"); }catch{ perms = null; }
+  try{ downloads = await window.claude.use("downloads"); }catch{ downloads = null; }
+  await acquireAI();
 })();
 })();
 </script>
