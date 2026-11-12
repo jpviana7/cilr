@@ -81,6 +81,17 @@ label.btn input{display:none}
 .stat b{font-family:var(--mono);font-size:1.3rem;font-variant-numeric:tabular-nums}
 .stat span{font-size:.78rem;color:var(--muted)}
 .stat.alert b{color:var(--bad)}
+.goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.goal{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px}
+.goal .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.goal .num{font-family:var(--mono);font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums}
+.goal .num small{font-size:.8rem;color:var(--muted);font-weight:500}
+.bar{height:10px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--ok);transition:width .3s}
+.goal.nok .bar i{background:var(--bad)}
+.goal.done{border-color:var(--ok)}
+.goal .sub2{font-size:.82rem;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+.goal input{font:inherit;font-family:var(--mono);width:4.5em;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
 ol.steps{margin:0;padding-left:1.2em;display:grid;gap:6px;max-width:68ch}
 ol.steps li::marker{font-family:var(--mono);color:var(--muted)}
 .msg{font-size:.88rem;margin:0;min-height:1.2em}
@@ -173,6 +184,22 @@ h3{font-size:.95rem;margin:4px 0 0}
         <button class="btn danger" id="btnWipe" type="button">Apagar dados</button>
         <span id="wipeConfirm" class="row" hidden><span class="hint">Apagar todos os resultados salvos?</span><button class="btn danger" id="btnWipeYes" type="button">Sim, apagar</button><button class="btn" id="btnWipeNo" type="button">Cancelar</button></span>
       </div>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom:6px">Meta de fotos para validar</div>
+      <div class="goals">
+        <div class="goal" id="goalOk">
+          <div class="top"><b>Baterias OK</b><span class="num" id="gOkN">0<small> / 50</small></span></div>
+          <div class="bar" role="progressbar" aria-label="Baterias OK" aria-valuemin="0" id="gOkBar"><i style="width:0"></i></div>
+          <div class="sub2"><span id="gOkTxt">Faltam 50</span><label>Meta <input id="gOkMeta" type="number" min="1" max="999" value="50"></label></div>
+        </div>
+        <div class="goal nok" id="goalNok">
+          <div class="top"><b>Baterias NOK (invertidas)</b><span class="num" id="gNokN">0<small> / 20</small></span></div>
+          <div class="bar" role="progressbar" aria-label="Baterias NOK" aria-valuemin="0" id="gNokBar"><i style="width:0"></i></div>
+          <div class="sub2"><span id="gNokTxt">Faltam 20</span><label>Meta <input id="gNokMeta" type="number" min="1" max="999" value="20"></label></div>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:6px">Conta pela sua conferência (não pela IA). NOK = bateria com elemento invertido; monte de propósito, se preciso. Baterias marcadas como VERIFICAR não entram na meta.</p>
     </div>
     <div class="stats" id="stats"></div>
     <p class="msg" id="setMsg"></p>
@@ -684,6 +711,22 @@ $("btnSave").addEventListener("click", async () => {
     setMsg("setMsg", "Resultado salvo neste aparelho.");
   }catch{ setMsg("setMsg", "Não consegui salvar neste aparelho (armazenamento bloqueado ou cheio).", true); }
 });
+const GOAL_KEY = "inspetorStraps.metas.v1";
+let lastCounts = {Ok:0, Nok:0};
+const metas = Object.assign({Ok:50, Nok:20}, lsGet(GOAL_KEY) || {});
+function drawGoal(k, n){
+  const m = Math.max(1, metas[k] || 1), pct = Math.min(100, 100*n/m), falta = Math.max(0, m - n);
+  $("g"+k+"Meta").value = m;
+  $("g"+k+"N").innerHTML = `${n}<small> / ${m}</small>`;
+  const bar = $("g"+k+"Bar"); bar.firstElementChild.style.width = pct + "%";
+  bar.setAttribute("aria-valuemax", m); bar.setAttribute("aria-valuenow", Math.min(n, m));
+  $("g"+k+"Txt").textContent = falta ? `Faltam ${falta} foto${falta > 1 ? "s" : ""}` : "Meta atingida";
+  $("goal"+k).classList.toggle("done", !falta);
+}
+for (const k of ["Ok","Nok"]) $("g"+k+"Meta").addEventListener("change", (e) => {
+  const v = Math.round(Number(e.target.value)); if (v >= 1 && v <= 999){ metas[k] = v; lsSet(GOAL_KEY, metas); }
+  drawGoal(k, lastCounts[k]);
+});
 async function renderStats(){
   const bats = await getAll("bats"), straps = await getAll("straps");
   const inv = bats.filter(b => b.veredito_operador === "bad");
@@ -702,6 +745,9 @@ async function renderStats(){
   const el = $("stats"); el.textContent = "";
   for (const [v, l, alert] of items){ const d = document.createElement("div"); d.className = "stat" + (alert ? " alert" : ""); d.innerHTML = `<b>${v}</b><span>${l}</span>`; el.append(d); }
   $("btnZip").disabled = !bats.length;
+  const nOk = bats.filter(b => b.veredito_operador === "ok").length;
+  drawGoal("Ok", nOk); drawGoal("Nok", inv.length);
+  lastCounts = {Ok:nOk, Nok:inv.length};
 }
 $("btnWipe").addEventListener("click", () => { $("btnWipe").hidden = true; $("wipeConfirm").hidden = false; });
 $("btnWipeNo").addEventListener("click", () => { $("btnWipe").hidden = false; $("wipeConfirm").hidden = true; });
