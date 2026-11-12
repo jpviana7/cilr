@@ -168,6 +168,11 @@ h3{font-size:.95rem;margin:4px 0 0}
         <button class="btn" id="btnUndo" type="button">Desfazer</button>
         <button class="btn" id="btnClear" type="button">Limpar caixas</button>
       </div>
+      <div class="row">
+        <button class="btn primary" id="btnDetect" type="button">Detectar straps (IA)</button>
+        <span class="hint">Acha os straps e os pares sozinho. Confira e ajuste se precisar.</span>
+      </div>
+      <p class="msg" id="detMsg" role="status"></p>
       <p class="hint" id="modeHint">Modo Ver: role a página normalmente. Use Marcar para desenhar uma caixa em cada strap.</p>
       <div class="stage" id="stage"><canvas id="cv" aria-label="Foto da bateria com as caixas dos straps"></canvas><div class="empty" id="empty" hidden>Tire uma foto ou escolha uma da galeria.</div></div>
       <p class="hint">Marque os straps <b>em pares</b>, na ordem: caixa 1 e 2 formam o par 1 (os dois straps soldados através da mesma parede), 3 e 4 o par 2, e assim por diante. As caixas ficam salvas e são reaproveitadas na próxima foto. Se a bateria estiver um pouco deslocada, use Mover tudo.</p>
@@ -363,7 +368,7 @@ function commitPhoto(c, name, isExample){
   S.src = c; S.W = c.width; S.H = c.height; S.photoName = name; S.isExample = isExample;
   S.res = null; S.saved = false;
   if (isExample) { S.boxes = EXAMPLE_BOXES.map(b => ({...b})); if (typeof setMarca === "function") setMarca("quadrado", false); }
-  else { const lay = lsGet(LAYOUT_KEY); if (Array.isArray(lay)) S.boxes = lay; }
+  else { const lay = lsGet(LAYOUT_KEY); S.boxes = Array.isArray(lay) ? lay : []; }
   S.hist = [];
   $("empty").hidden = true;
   render(); renderResults();
@@ -420,7 +425,7 @@ $("inCam2").addEventListener("change", onFile);
 
 /* ---------- tela de conferência da foto ---------- */
 let pending = null;
-function previewBoxes(){ return S.boxes.length ? S.boxes : (Array.isArray(lsGet(LAYOUT_KEY)) ? lsGet(LAYOUT_KEY) : []); }
+function previewBoxes(){ const lay = lsGet(LAYOUT_KEY); return Array.isArray(lay) ? lay : []; }
 function grayCrop(c, b, w){
   const sx = b.x*c.width, sy = b.y*c.height, sw = Math.max(1, b.w*c.width), sh = Math.max(1, b.h*c.height);
   const h = Math.max(8, Math.round(w*sh/sw));
@@ -478,7 +483,7 @@ function openPreview(c, name){
   drawPreview();
   $("pvBoxHint").textContent = boxes.length
     ? "As caixas azuis são as posições salvas. Se não caíram sobre os straps, você pode usar a foto e ajustar com Mover tudo, ou tirar outra na mesma posição de antes."
-    : "Ainda não há caixas marcadas. Depois de usar a foto, marque os straps em pares.";
+    : "Ainda não há caixas marcadas. Depois de usar a foto, toque em Detectar straps ou marque em pares.";
   const ul = $("pvChecks"); ul.textContent = "";
   for (const it of items){
     const li = document.createElement("li");
@@ -573,7 +578,7 @@ window.addEventListener("resize", () => render());
 /* ---------- edição das caixas ---------- */
 const HINTS = {
   ver:"Modo Ver: role a página normalmente. Use Marcar para desenhar uma caixa em cada strap.",
-  desenhar:"Modo Marcar: arraste para desenhar uma caixa. Arraste uma caixa existente para movê-la, ou o quadradinho do canto para mudar o tamanho.",
+  desenhar:"Modo Marcar: toque no meio de um strap para criar uma caixa, ou arraste para desenhar. Arraste uma caixa existente para movê-la, ou o quadradinho do canto para mudar o tamanho.",
   mover:"Modo Mover tudo: arraste para deslocar todas as caixas juntas.",
   apagar:"Modo Apagar: toque numa caixa para removê-la. Atenção: a numeração dos pares muda."
 };
@@ -618,7 +623,14 @@ function endDrag(e){
   if (d.kind === "tap"){ const i = hit(d.p); if (i >= 0){ snap(); S.boxes.splice(i,1); changed(); } return; }
   if (d.kind === "new"){
     const r = normRect(d.a, d.b);
-    if (r.w*d.a.rw > 14 && r.h*d.a.rh > 14){ snap(); S.boxes.push(r); changed(); } else render();
+    if (r.w*d.a.rw > 14 && r.h*d.a.rh > 14){ snap(); S.boxes.push(r); changed(); }
+    else {
+      const ws = S.boxes.map(b => b.w), hs = S.boxes.map(b => b.h);
+      const w = ws.length ? median(ws) : 0.14, h = hs.length ? median(hs) : 0.14*S.W/S.H;
+      let nb = {x:clamp(d.a.x - w/2, 0, 1-w), y:clamp(d.a.y - h/2, 0, 1-h), w, h};
+      nb = snapBox(nb) || nb;
+      snap(); S.boxes.push(nb); changed();
+    }
     return;
   }
   changed();
@@ -717,6 +729,97 @@ Avalie cada recorte numerado de forma independente, sem supor padrão entre eles
 Responda somente com um array JSON, um objeto por recorte numerado, em ordem:
 [{"n":1,"tipo":"neg"|"pos"|"incerto","confianca":0.0 a 1.0,"obs":"até 8 palavras"}]`;
 }
+/* ---------- detecção dos straps ---------- */
+function otsu(a){
+  const h = new Array(256).fill(0); for (const v of a) h[Math.max(0, Math.min(255, v|0))]++;
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i*h[i];
+  let sB = 0, wB = 0, best = 0, t = 128; const n = a.length;
+  for (let i = 0; i < 256; i++){ wB += h[i]; if (!wB) continue; const wF = n - wB; if (!wF) break;
+    sB += i*h[i]; const mB = sB/wB, mF = (sum - sB)/wF, v = wB*wF*(mB-mF)*(mB-mF); if (v > best){ best = v; t = i; } }
+  return t;
+}
+/* ajusta a caixa à mancha clara (chumbo) mais próxima do centro */
+function snapBox(b, grow=0.3){
+  if (!S.src) return null;
+  const R = {x:Math.max(0, b.x - b.w*grow), y:Math.max(0, b.y - b.h*grow)};
+  R.w = Math.min(1, b.x + b.w*(1+grow)) - R.x; R.h = Math.min(1, b.y + b.h*(1+grow)) - R.y;
+  const {a, w, h} = grayCrop(S.src, R, 160);
+  const t = Math.max(otsu(a), 110);
+  let m = new Uint8Array(w*h); for (let i = 0; i < m.length; i++) m[i] = a[i] > t ? 1 : 0;
+  const morph = (src, isErode, r) => { const o = new Uint8Array(w*h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){ let v = isErode ? 1 : 0;
+      for (let dy = -r; dy <= r && (isErode ? v : !v); dy++) for (let dx = -r; dx <= r; dx++){
+        const yy = y+dy, xx = x+dx; const s2 = (yy < 0 || xx < 0 || yy >= h || xx >= w) ? 0 : src[yy*w+xx];
+        if (isErode && !s2){ v = 0; break; } if (!isErode && s2){ v = 1; break; } }
+      o[y*w+x] = v; } return o; };
+  m = morph(morph(m, true, 2), false, 2);
+  const lab = new Int32Array(w*h), cx0 = w/2, cy0 = h/2; let best = null, id = 0;
+  for (let i = 0; i < m.length; i++){ if (!m[i] || lab[i]) continue; id++;
+    const st = [i]; lab[i] = id; let n = 0, x0 = w, y0 = h, x1 = 0, y1 = 0, sx = 0, sy = 0;
+    while (st.length){ const j = st.pop(), x = j % w, y = (j / w) | 0; n++; sx += x; sy += y;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const k of [j-1, j+1, j-w, j+w]){ if (k < 0 || k >= m.length) continue; if ((k === j-1 && x === 0) || (k === j+1 && x === w-1)) continue; if (m[k] && !lab[k]){ lab[k] = id; st.push(k); } } }
+    const d = Math.hypot(sx/n - cx0, sy/n - cy0) / Math.hypot(w, h);
+    const sc = n * (1 - Math.min(0.9, d*2));
+    if (!best || sc > best.sc) best = {sc, n, x0, y0, x1, y1}; }
+  if (!best) return null;
+  const nb = {x: R.x + best.x0/w*R.w, y: R.y + best.y0/h*R.h, w: (best.x1-best.x0+1)/w*R.w, h: (best.y1-best.y0+1)/h*R.h};
+  const ratio = (nb.w*nb.h) / (b.w*b.h);
+  if (ratio < 0.25 || ratio > 2.2) return null;
+  return nb;
+}
+function gridImage(){
+  const k = Math.min(1, 1400 / Math.max(S.W, S.H));
+  const c = document.createElement("canvas"); c.width = Math.round(S.W*k); c.height = Math.round(S.H*k);
+  const g = c.getContext("2d"); g.drawImage(S.src, 0, 0, c.width, c.height);
+  g.lineWidth = 1; g.font = "bold 14px sans-serif";
+  for (let i = 0; i <= 10; i++){
+    const x = Math.round(i/10*c.width), y = Math.round(i/10*c.height);
+    g.strokeStyle = "rgba(255,212,0,.55)";
+    g.beginPath(); g.moveTo(x+.5, 0); g.lineTo(x+.5, c.height); g.stroke();
+    g.beginPath(); g.moveTo(0, y+.5); g.lineTo(c.width, y+.5); g.stroke();
+    const lbl = String(i*10);
+    for (const [tx, ty] of [[Math.min(x+2, c.width-24), 14], [2, Math.max(14, Math.min(y-2, c.height-2))]]){
+      g.fillStyle = "rgba(0,0,0,.75)"; g.fillRect(tx-1, ty-13, g.measureText(lbl).width+4, 16);
+      g.fillStyle = "#ffd400"; g.fillText(lbl, tx+1, ty);
+    }
+  }
+  return c;
+}
+const DETECT_PROMPT = `A imagem mostra, vista de cima, uma bateria chumbo-ácido automotiva ainda sem tampa, sobre uma esteira.
+Por cima da foto há uma GRADE AMARELA de referência: os números no topo são a posição horizontal (x) e os da esquerda a posição vertical (y), em porcentagem da imagem, de 0 a 100.
+A bateria tem células (compartimentos separados por paredes). Em cada célula há dois "straps": peças de chumbo prateadas, retangulares, sobre as placas.
+Dois straps de células vizinhas são soldados entre si através da parede que separa as células: esses dois formam um PAR (ligação intercélula). Muitas vezes um deles tem um braço/aba que passa por cima da parede até o outro.
+Os straps que têm um polo (cilindro do terminal) NÃO formam par: não inclua esses.
+Se aparecer mais de uma bateria, use só a bateria inteira mais central da foto.
+Tarefa: liste todos os pares da bateria. Para cada strap, dê a caixa justa da FACE do strap (o bloco retangular; sem o braço comprido), em porcentagem da imagem: [x0, y0, x1, y1].
+Use a grade para medir com cuidado. Uma bateria de 12 V tem 6 células e normalmente 5 pares.
+Responda somente com JSON neste formato:
+{"pares":[{"a":[x0,y0,x1,y1],"b":[x0,y0,x1,y1]}],"terminais":2,"obs":"até 12 palavras"}`;
+$("btnDetect").addEventListener("click", async () => {
+  if (!S.src){ setMsg("detMsg", "Tire uma foto primeiro.", true); return; }
+  if (!sample){ setMsg("detMsg", "A detecção só funciona com a página aberta no app do Claude ou em claude.ai.", true); return; }
+  const btn = $("btnDetect"); btn.disabled = true;
+  $("detMsg").className = "msg"; $("detMsg").innerHTML = '<span class="spin" aria-hidden="true"></span> Procurando os straps… (pode levar até 1 minuto)';
+  try{
+    const img = await toBlob(gridImage(), 0.9);
+    const out = await sample.json(DETECT_PROMPT, {images:[img], modelTier:"default", cache:false});
+    const pares = Array.isArray(out && out.pares) ? out.pares : [];
+    const ok = (v) => Array.isArray(v) && v.length === 4 && v.every(n => typeof n === "number" && isFinite(n));
+    const toBox = (v) => { const [a,b,c,d] = v.map(n => clamp(n/100, 0, 1)); return {x:Math.min(a,c), y:Math.min(b,d), w:Math.abs(c-a), h:Math.abs(d-b)}; };
+    const list = pares.filter(p => p && ok(p.a) && ok(p.b)).map(p => [toBox(p.a), toBox(p.b)])
+      .filter(([a, b]) => a.w > 0.01 && a.h > 0.01 && b.w > 0.01 && b.h > 0.01);
+    if (!list.length){ setMsg("detMsg", "A IA não encontrou pares nesta foto. Marque os straps à mão (modo Marcar).", true); return; }
+    list.sort((p, q) => ((p[0].y+p[1].y) - (q[0].y+q[1].y)) || ((p[0].x+p[1].x) - (q[0].x+q[1].x)));
+    let snapped = 0; const boxes = [];
+    for (const pr of list) for (const b of pr){ const sb = snapBox(b); if (sb) snapped++; boxes.push(sb || b); }
+    snap(); S.boxes = boxes; changed();
+    setMsg("detMsg", `${list.length} par(es) encontrados${list.length !== 5 ? " (o normal numa bateria de 12 V são 5)" : ""}. Confira se cada caixa está sobre um strap e se os números dos pares fazem sentido; ajuste no modo Marcar se precisar.`, list.length !== 5);
+  }catch(e){
+    setMsg("detMsg", ERR[e && e.code] || "A detecção falhou. Tente de novo ou marque à mão.", true);
+  }finally{ btn.disabled = false; }
+});
+
 const ERR = {
   not_granted:"Você não autorizou o uso do Claude nesta página. Recarregue a página para autorizar.",
   rate_limited:"Muitas análises seguidas. Espere um minuto e tente de novo.",
